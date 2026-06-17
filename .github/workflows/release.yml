@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Select next version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags
+
+          latest_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)"
+          if [[ -z "${latest_tag}" ]]; then
+            latest_tag="v0.0.0"
+          fi
+
+          bump="patch"
+          if [[ -f ".release-bump" ]]; then
+            bump="$(tr '[:upper:]' '[:lower:]' < .release-bump | tr -d '[:space:]')"
+          elif [[ "${latest_tag}" == "v0.0.0" ]]; then
+            bump="minor"
+          else
+            changed_files="$(git diff --name-status "${latest_tag}"..HEAD)"
+            added_go_files="$(printf '%s\n' "${changed_files}" | awk '$1 == "A" && $2 ~ /\.go$/ { print $2 }')"
+            dependency_changes="$(printf '%s\n' "${changed_files}" | awk '$2 == "go.mod" || $2 == "go.sum" { print $2 }')"
+
+            if [[ -n "${added_go_files}" || -n "${dependency_changes}" ]]; then
+              bump="minor"
+            fi
+          fi
+
+          case "${bump}" in
+            major|minor|patch) ;;
+            *)
+              echo "::error::.release-bump must contain major, minor, or patch."
+              exit 1
+              ;;
+          esac
+
+          version="${latest_tag#v}"
+          IFS='.' read -r major minor patch <<< "${version}"
+
+          case "${bump}" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+          esac
+
+          next_tag="v${major}.${minor}.${patch}"
+
+          if git rev-parse "${next_tag}" >/dev/null 2>&1; then
+            echo "::error::Tag ${next_tag} already exists."
+            exit 1
+          fi
+
+          {
+            echo "latest_tag=${latest_tag}"
+            echo "bump=${bump}"
+            echo "next_tag=${next_tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Create release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest_tag="${{ steps.version.outputs.latest_tag }}"
+          next_tag="${{ steps.version.outputs.next_tag }}"
+          bump="${{ steps.version.outputs.bump }}"
+
+          mkdir -p dist
+
+          {
+            echo "## ${next_tag}"
+            echo
+            echo "Release type: ${bump}"
+            echo
+
+            echo "### Commits"
+            if [[ "${latest_tag}" == "v0.0.0" ]]; then
+              git log --oneline --no-merges
+            else
+              git log --oneline --no-merges "${latest_tag}"..HEAD
+            fi
+            echo
+
+            echo "### Changed files"
+            if [[ "${latest_tag}" == "v0.0.0" ]]; then
+              git ls-tree -r --name-only HEAD | sed 's/^/A\t/'
+            else
+              git diff --name-status "${latest_tag}"..HEAD
+            fi
+          } > dist/release-notes.md
+
+      - name: Create tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          next_tag="${{ steps.version.outputs.next_tag }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${next_tag}" -m "Release ${next_tag}"
+          git push origin "${next_tag}"
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --release-notes=dist/release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
