@@ -2,9 +2,13 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunRootHelp(t *testing.T) {
@@ -99,20 +103,118 @@ func TestRunInvalidFlagIsUsageError(t *testing.T) {
 	}
 }
 
-func TestRunScanNotImplementedUsesScanFailure(t *testing.T) {
+func TestRunScanJSONWritesSnapshotStdoutOnly(t *testing.T) {
 	workDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workDir, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	code, stdout, stderr := runAppWithWorkDir(t, workDir, "scan", "--root", workDir, "--json")
-	if code != ExitScanFailed {
-		t.Fatalf("Run() exit code = %d, want %d", code, ExitScanFailed)
+	if code != ExitOK {
+		t.Fatalf("Run() exit code = %d, want %d", code, ExitOK)
 	}
-	if stdout != "" {
-		t.Fatalf("stdout = %q, want empty", stdout)
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
 	}
-	if !strings.Contains(stderr, "scan is not implemented yet") {
-		t.Fatalf("stderr missing not implemented message: %q", stderr)
+
+	var document struct {
+		SchemaVersion  string `json:"schema_version"`
+		ScannerVersion string `json:"scanner_version"`
+		ProjectRoot    string `json:"project_root"`
+		ProjectID      string `json:"project_id"`
+		Files          []struct {
+			Path   string `json:"path"`
+			SHA256 string `json:"sha256"`
+			Status string `json:"status"`
+		} `json:"files"`
+		Summary struct {
+			ScannedFiles int `json:"scanned_files"`
+		} `json:"summary"`
 	}
-	if strings.Contains(stdout, "finding") || strings.Contains(stderr, "finding") {
-		t.Fatalf("command emitted fake finding output: stdout=%q stderr=%q", stdout, stderr)
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+	}
+	if document.SchemaVersion != "malox.scan.snapshot.v1" {
+		t.Fatalf("schema_version = %q", document.SchemaVersion)
+	}
+	if document.ScannerVersion != "test-version" {
+		t.Fatalf("scanner_version = %q, want test-version", document.ScannerVersion)
+	}
+	if document.ProjectRoot != "." {
+		t.Fatalf("project_root = %q, want .", document.ProjectRoot)
+	}
+	if !strings.HasPrefix(document.ProjectID, "sha256:") {
+		t.Fatalf("project_id = %q, want sha256 prefix", document.ProjectID)
+	}
+	if len(document.Files) != 1 {
+		t.Fatalf("files length = %d, want 1", len(document.Files))
+	}
+	if document.Files[0].Path != "package.json" || document.Files[0].Status != "scanned" || document.Files[0].SHA256 == "" {
+		t.Fatalf("file record = %#v, want scanned package.json with SHA256", document.Files[0])
+	}
+	if document.Summary.ScannedFiles != 1 {
+		t.Fatalf("scanned_files = %d, want 1", document.Summary.ScannedFiles)
+	}
+	if strings.Contains(stdout, workDir) {
+		t.Fatalf("stdout leaked absolute root path %q:\n%s", workDir, stdout)
+	}
+}
+
+func TestRunDiffJSONComparesRecentSnapshots(t *testing.T) {
+	workDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workDir, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := runAppWithWorkDir(t, workDir, "scan", "--root", workDir, "--json")
+	if code != ExitOK {
+		t.Fatalf("first scan exit code = %d, want %d; stderr = %q", code, ExitOK, stderr)
+	}
+	if err := os.Remove(filepath.Join(workDir, "package.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "added.js"), []byte("console.log('added')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Millisecond)
+
+	code, _, stderr = runAppWithWorkDir(t, workDir, "scan", "--root", workDir, "--json")
+	if code != ExitOK {
+		t.Fatalf("second scan exit code = %d, want %d; stderr = %q", code, ExitOK, stderr)
+	}
+
+	code, stdout, stderr := runAppWithWorkDir(t, workDir, "diff", "--json")
+	if code != ExitFindings {
+		t.Fatalf("diff exit code = %d, want %d; stderr = %q", code, ExitFindings, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+
+	var document struct {
+		SchemaVersion string `json:"schema_version"`
+		AddedFiles    []struct {
+			Path  string `json:"path"`
+			State string `json:"state"`
+		} `json:"added_files"`
+		RemovedFiles []struct {
+			Path  string `json:"path"`
+			State string `json:"state"`
+		} `json:"removed_files"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+	}
+	if document.SchemaVersion != "malox.diff.v1" {
+		t.Fatalf("schema_version = %q, want malox.diff.v1", document.SchemaVersion)
+	}
+	if len(document.AddedFiles) != 1 || document.AddedFiles[0].Path != "added.js" || document.AddedFiles[0].State != "added" {
+		t.Fatalf("added_files = %#v, want added.js", document.AddedFiles)
+	}
+	if len(document.RemovedFiles) != 1 ||
+		document.RemovedFiles[0].Path != "package.json" ||
+		document.RemovedFiles[0].State != "removed" {
+		t.Fatalf("removed_files = %#v, want package.json", document.RemovedFiles)
 	}
 }
 

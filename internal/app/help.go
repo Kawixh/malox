@@ -92,13 +92,20 @@ func diffHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Compare scan snapshots.
 
 Usage:
-  malox diff [global flags]
+  malox diff [flags]
+
+Flags:
+  --from  Source scan ID (default: second most recent scan)
+  --to    Target scan ID (default: most recent scan)
+  --json  Shortcut for JSON output
 
 Global flags:
   --config --state-dir --cache-dir --offline --no-color --quiet --verbose
 
 Examples:
   malox diff
+  malox diff --json
+  malox diff --from 2026-06-17T12-30-00.000000000Z --to 2026-06-17T12-35-00.000000000Z
   malox diff --state-dir ./.malox
 `)
 	return err

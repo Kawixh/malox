@@ -9,7 +9,11 @@ import (
 	"log/slog"
 	"runtime"
 
+	"malox/internal/cache"
 	"malox/internal/config"
+	"malox/internal/diff"
+	"malox/internal/report"
+	"malox/internal/scan"
 )
 
 // Options controls one CLI invocation.
@@ -66,12 +70,14 @@ func Run(ctx context.Context, opts Options) int {
 		logger.DebugContext(ctx, "command parsed", "command", inv.command.String())
 	}
 
-	if err := runCommand(ctx, inv.command, cfg); err != nil {
+	if err := runCommand(ctx, inv.command, cfg, opts.Stdout, opts.Build); err != nil {
 		code := ExitCode(err)
 		if cfg.Verbose {
 			logger.DebugContext(ctx, "command failed", "command", inv.command.String(), "exit_code", code)
 		}
-		writeRuntimeError(opts.Stderr, err)
+		if code != ExitFindings {
+			writeRuntimeError(opts.Stderr, err)
+		}
 		return code
 	}
 
@@ -108,18 +114,56 @@ func newLogger(w io.Writer, cfg config.Values) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
 }
 
-func runCommand(ctx context.Context, command command, cfg config.Values) error {
-	_ = cfg
-
+func runCommand(ctx context.Context, command command, cfg config.Values, stdout io.Writer, build BuildInfo) error {
 	if err := ctx.Err(); err != nil {
 		return withExitCode(ExitScanFailed, fmt.Errorf("command canceled: %w", err))
 	}
 
 	switch command {
 	case commandScan:
-		return withExitCode(ExitScanFailed, errors.New("scan is not implemented yet; milestone 2 will add baseline scanning"))
+		store, err := cache.NewStore(cfg.StateDir)
+		if err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("open project state: %w", err))
+		}
+		previous, found, err := store.LoadLatest(ctx)
+		if err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("load previous snapshot: %w", err))
+		}
+		var previousSnapshot *scan.Snapshot
+		if found {
+			previousSnapshot = &previous
+		}
+		snapshot, err := scan.Project(ctx, scan.Options{
+			Root:           cfg.Scan.Root,
+			StateDir:       store.Dir(),
+			ScannerVersion: build.Version,
+			MaxWorkers:     cfg.Scan.MaxWorkers,
+			MaxFileSize:    cfg.Scan.MaxFileSize,
+			StrictHash:     cfg.Scan.StrictHash,
+			Previous:       previousSnapshot,
+		})
+		if err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("scan project: %w", err))
+		}
+		if err := store.WriteSnapshot(ctx, snapshot); err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("persist scan snapshot: %w", err))
+		}
+		if err := report.WriteScan(stdout, snapshot, cfg.Scan.Output); err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("write scan report: %w", err))
+		}
+		return nil
 	case commandDiff:
-		return withExitCode(ExitScanFailed, errors.New("diff is not implemented yet; milestone 3 will add snapshot comparison"))
+		diffReport, err := runDiff(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		if err := report.WriteDiff(stdout, diffReport, cfg.Diff.Output); err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("write diff report: %w", err))
+		}
+		if diffReport.HasRelevantChanges() {
+			return withExitCode(ExitFindings, errors.New("snapshot differences found"))
+		}
+		return nil
 	case commandRulesTest:
 		return withExitCode(ExitScanFailed, errors.New("rules test is not implemented yet; milestone 5 will add rule execution"))
 	case commandCacheUpdate:
@@ -129,6 +173,41 @@ func runCommand(ctx context.Context, command command, cfg config.Values) error {
 	default:
 		return usageError("command %q is not implemented", command.String())
 	}
+}
+
+func runDiff(ctx context.Context, cfg config.Values) (diff.Report, error) {
+	store, err := cache.NewStore(cfg.StateDir)
+	if err != nil {
+		return diff.Report{}, withExitCode(ExitScanFailed, fmt.Errorf("open project state: %w", err))
+	}
+
+	fromID := cfg.Diff.From
+	toID := cfg.Diff.To
+	if fromID == "" && toID == "" {
+		from, to, err := store.RecentPair(ctx)
+		if err != nil {
+			return diff.Report{}, withExitCode(ExitScanFailed, fmt.Errorf("select recent snapshots: %w", err))
+		}
+		fromID = from.ID
+		toID = to.ID
+	}
+
+	fromSnapshot, err := store.LoadSnapshot(ctx, fromID)
+	if err != nil {
+		return diff.Report{}, diffLoadError("load from snapshot", fromID, err)
+	}
+	toSnapshot, err := store.LoadSnapshot(ctx, toID)
+	if err != nil {
+		return diff.Report{}, diffLoadError("load to snapshot", toID, err)
+	}
+	return diff.Compare(fromSnapshot, toSnapshot), nil
+}
+
+func diffLoadError(action, id string, err error) error {
+	if errors.Is(err, cache.ErrSnapshotNotFound) {
+		return withExitCode(ExitUsage, fmt.Errorf("%s %q: %w", action, id, err))
+	}
+	return withExitCode(ExitScanFailed, fmt.Errorf("%s %q: %w", action, id, err))
 }
 
 func writeVersion(w io.Writer, build BuildInfo) error {

@@ -16,6 +16,7 @@ import (
 )
 
 const defaultMaxFileSize = 10 * 1024 * 1024
+const stateDirEnv = "MALOX_PROJECT_STATE_DIR"
 
 // Values contains all typed configuration needed by the app boundary.
 type Values struct {
@@ -27,6 +28,7 @@ type Values struct {
 	Quiet      bool
 	Verbose    bool
 	Scan       Scan
+	Diff       Diff
 }
 
 // Scan contains configuration for the scan command.
@@ -36,6 +38,13 @@ type Scan struct {
 	StrictHash  bool
 	MaxWorkers  int
 	MaxFileSize int64
+}
+
+// Diff contains configuration for the diff command.
+type Diff struct {
+	From   string
+	To     string
+	Output report.Format
 }
 
 // FlagValues contains optional values parsed from CLI flags.
@@ -48,6 +57,7 @@ type FlagValues struct {
 	Quiet      *bool
 	Verbose    *bool
 	Scan       ScanFlags
+	Diff       DiffFlags
 }
 
 // ScanFlags contains optional scan values parsed from CLI flags.
@@ -58,6 +68,13 @@ type ScanFlags struct {
 	StrictHash  *bool
 	MaxWorkers  *int
 	MaxFileSize *int64
+}
+
+// DiffFlags contains optional diff values parsed from CLI flags.
+type DiffFlags struct {
+	From *string
+	To   *string
+	JSON *bool
 }
 
 // LoadOptions describes how Load should resolve configuration.
@@ -103,6 +120,9 @@ func Load(ctx context.Context, opts LoadOptions) (Values, error) {
 			MaxWorkers:  max(1, runtime.GOMAXPROCS(0)),
 			MaxFileSize: defaultMaxFileSize,
 		},
+		Diff: Diff{
+			Output: report.FormatTable,
+		},
 	}
 
 	var problems []string
@@ -128,6 +148,7 @@ func Load(ctx context.Context, opts LoadOptions) (Values, error) {
 		problems = append(problems, applyFile(workDir, &values, fileValues)...)
 	}
 
+	problems = append(problems, applyEnv(workDir, &values)...)
 	problems = append(problems, applyFlags(workDir, &values, opts.Flags, &outputExplicit, &jsonRequested)...)
 	if jsonRequested && outputExplicit && values.Scan.Output != report.FormatJSON {
 		problems = append(problems, "--json cannot be combined with --output "+values.Scan.Output.String())
@@ -229,8 +250,34 @@ func applyFlags(
 	if flags.Scan.JSON != nil && *flags.Scan.JSON {
 		*jsonRequested = true
 	}
+	if flags.Diff.From != nil {
+		values.Diff.From = *flags.Diff.From
+	}
+	if flags.Diff.To != nil {
+		values.Diff.To = *flags.Diff.To
+	}
+	if flags.Diff.JSON != nil && *flags.Diff.JSON {
+		values.Diff.Output = report.FormatJSON
+	}
 
 	return problems
+}
+
+func applyEnv(workDir string, values *Values) []string {
+	raw, ok := os.LookupEnv(stateDirEnv)
+	if !ok {
+		return nil
+	}
+	if strings.TrimSpace(raw) == "" {
+		values.StateDir = ""
+		return []string{stateDirEnv + " is required"}
+	}
+	resolved, err := platform.ResolvePath(workDir, raw)
+	if err != nil {
+		return []string{fmt.Sprintf("resolve %s: %v", stateDirEnv, err)}
+	}
+	values.StateDir = resolved
+	return nil
 }
 
 func (v Values) validationProblems() []string {
@@ -248,6 +295,7 @@ func (v Values) validationProblems() []string {
 		problems = append(problems, "--quiet and --verbose cannot both be set")
 	}
 	problems = append(problems, v.Scan.validationProblems()...)
+	problems = append(problems, v.Diff.validationProblems()...)
 	return problems
 }
 
@@ -268,6 +316,17 @@ func (s Scan) validationProblems() []string {
 	}
 	if s.MaxFileSize < 1 {
 		problems = append(problems, "max file size must be greater than 0")
+	}
+	return problems
+}
+
+func (d Diff) validationProblems() []string {
+	problems := []string{}
+	if (d.From == "") != (d.To == "") {
+		problems = append(problems, "--from and --to must be provided together")
+	}
+	if !d.Output.Valid() {
+		problems = append(problems, "diff output must be one of table, json, or plain")
 	}
 	return problems
 }

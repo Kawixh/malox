@@ -144,6 +144,7 @@ func parseInvocation(args []string) (invocation, error) {
 				return invocation{}, err
 			}
 			inv.flags.Scan.JSON = &v
+			inv.flags.Diff.JSON = &v
 		case "output":
 			v, next, err := parseStringFlag(name, value, hasValue, args, i)
 			if err != nil {
@@ -171,6 +172,20 @@ func parseInvocation(args []string) (invocation, error) {
 			}
 			inv.flags.Scan.MaxFileSize = &v
 			i = next
+		case "from":
+			v, next, err := parseStringFlag(name, value, hasValue, args, i)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Diff.From = &v
+			i = next
+		case "to":
+			v, next, err := parseStringFlag(name, value, hasValue, args, i)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Diff.To = &v
+			i = next
 		default:
 			return invocation{}, usageError("unknown flag --%s", name)
 		}
@@ -181,6 +196,12 @@ func parseInvocation(args []string) (invocation, error) {
 		return invocation{}, err
 	}
 	inv.command = command
+	switch inv.command {
+	case commandScan:
+		inv.flags.Diff.JSON = nil
+	case commandDiff:
+		inv.flags.Scan.JSON = nil
+	}
 
 	if err := validateFlagScope(inv); err != nil {
 		return invocation{}, err
@@ -327,13 +348,37 @@ func resolveCommand(positionals []string) (command, error) {
 
 func validateFlagScope(inv invocation) error {
 	if inv.command == commandScan {
+		if inv.flags.Diff.From != nil {
+			return usageError("--from is only valid for diff")
+		}
+		if inv.flags.Diff.To != nil {
+			return usageError("--to is only valid for diff")
+		}
+		return nil
+	}
+	if inv.command == commandDiff {
+		if inv.flags.Scan.Root != nil {
+			return usageError("--root is only valid for scan")
+		}
+		if inv.flags.Scan.Output != nil {
+			return usageError("--output is only valid for scan")
+		}
+		if inv.flags.Scan.StrictHash != nil {
+			return usageError("--strict-hash is only valid for scan")
+		}
+		if inv.flags.Scan.MaxWorkers != nil {
+			return usageError("--max-workers is only valid for scan")
+		}
+		if inv.flags.Scan.MaxFileSize != nil {
+			return usageError("--max-file-size is only valid for scan")
+		}
 		return nil
 	}
 	if inv.flags.Scan.Root != nil {
 		return usageError("--root is only valid for scan")
 	}
 	if inv.flags.Scan.JSON != nil {
-		return usageError("--json is only valid for scan")
+		return usageError("--json is only valid for scan or diff")
 	}
 	if inv.flags.Scan.Output != nil {
 		return usageError("--output is only valid for scan")
@@ -346,6 +391,12 @@ func validateFlagScope(inv invocation) error {
 	}
 	if inv.flags.Scan.MaxFileSize != nil {
 		return usageError("--max-file-size is only valid for scan")
+	}
+	if inv.flags.Diff.From != nil {
+		return usageError("--from is only valid for diff")
+	}
+	if inv.flags.Diff.To != nil {
+		return usageError("--to is only valid for diff")
 	}
 	return nil
 }

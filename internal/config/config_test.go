@@ -62,6 +62,36 @@ func TestLoadAppliesFlagsAndDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadStateDirEnvironmentAndFlagPrecedence(t *testing.T) {
+	workDir := t.TempDir()
+	envState := filepath.Join(workDir, "env-state")
+	flagState := filepath.Join(workDir, "flag-state")
+	t.Setenv(stateDirEnv, envState)
+
+	values, err := Load(t.Context(), LoadOptions{
+		WorkDir: workDir,
+	})
+	if err != nil {
+		t.Fatalf("Load() env error = %v", err)
+	}
+	if values.StateDir != envState {
+		t.Fatalf("StateDir = %q, want env state %q", values.StateDir, envState)
+	}
+
+	values, err = Load(t.Context(), LoadOptions{
+		WorkDir: workDir,
+		Flags: FlagValues{
+			StateDir: ptr(flagState),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Load() flag error = %v", err)
+	}
+	if values.StateDir != flagState {
+		t.Fatalf("StateDir = %q, want flag state %q", values.StateDir, flagState)
+	}
+}
+
 func TestLoadJSONShortcutDoesNotConflictWithDefaultOutput(t *testing.T) {
 	workDir := t.TempDir()
 	cacheDir := filepath.Join(workDir, "cache")
