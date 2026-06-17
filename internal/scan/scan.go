@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"malox/internal/fileid"
+	"malox/internal/node"
 )
 
 type candidate struct {
@@ -80,6 +81,16 @@ func Project(ctx context.Context, opts Options) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 
+	nodeInventory, err := node.Build(ctx, node.BuildOptions{
+		Root:    root,
+		Files:   nodeFileRefs(files),
+		Signals: signals,
+	})
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("build node inventory: %w", err)
+	}
+	signals = nodeInventory.Signals
+
 	issues := append(walkIssues, processIssues...)
 	sortSnapshotData(files, skippedFiles, skippedDirs, issues, signals)
 	signals = uniqueSignals(signals)
@@ -92,6 +103,7 @@ func Project(ctx context.Context, opts Options) (Snapshot, error) {
 		StartedAt:          startedAt,
 		FinishedAt:         now().UTC(),
 		PackageManagers:    signals,
+		Node:               nodeInventory,
 		Files:              files,
 		SkippedFiles:       skippedFiles,
 		SkippedDirectories: skippedDirs,
@@ -525,52 +537,13 @@ func Classify(rel string) string {
 	}
 }
 
-// PackageOwner returns coarse node_modules ownership for milestone 2 snapshots.
+// PackageOwner returns node_modules ownership for common npm and pnpm layouts.
 func PackageOwner(rel string) string {
-	parts := strings.Split(filepath.ToSlash(rel), "/")
-	for i := len(parts) - 1; i >= 0; i-- {
-		if parts[i] != "node_modules" || i+1 >= len(parts) {
-			continue
-		}
-		name := parts[i+1]
-		if strings.HasPrefix(name, "@") && i+2 < len(parts) {
-			return name + "/" + parts[i+2]
-		}
-		return name
-	}
-	return ""
+	return node.PackageOwner(rel)
 }
 
 func detectPackageManagerSignal(rel string, isDir bool) (PackageManagerSignal, bool) {
-	if isDir {
-		if lastPathElement(rel) == "node_modules" {
-			return PackageManagerSignal{
-				Manager: "node",
-				Kind:    "dependency_directory",
-				Path:    rel,
-			}, true
-		}
-		return PackageManagerSignal{}, false
-	}
-
-	switch strings.ToLower(lastPathElement(rel)) {
-	case "package.json":
-		return PackageManagerSignal{Manager: "node", Kind: "manifest", Path: rel}, true
-	case "package-lock.json", "npm-shrinkwrap.json":
-		return PackageManagerSignal{Manager: "npm", Kind: "lockfile", Path: rel}, true
-	case "pnpm-lock.yaml":
-		return PackageManagerSignal{Manager: "pnpm", Kind: "lockfile", Path: rel}, true
-	case "yarn.lock":
-		return PackageManagerSignal{Manager: "yarn", Kind: "lockfile", Path: rel}, true
-	case "bun.lock", "bun.lockb":
-		return PackageManagerSignal{Manager: "bun", Kind: "lockfile", Path: rel}, true
-	case "deno.json":
-		return PackageManagerSignal{Manager: "deno", Kind: "manifest", Path: rel}, true
-	case "deno.lock":
-		return PackageManagerSignal{Manager: "deno", Kind: "lockfile", Path: rel}, true
-	default:
-		return PackageManagerSignal{}, false
-	}
+	return node.DetectPackageManagerSignal(rel, isDir)
 }
 
 func isLockfilePath(rel string) bool {
@@ -649,6 +622,18 @@ func summarize(snapshot Snapshot) Summary {
 	}
 	summary.NodeModulesPackages = len(owners)
 	return summary
+}
+
+func nodeFileRefs(files []File) []node.FileRef {
+	refs := make([]node.FileRef, 0, len(files))
+	for _, file := range files {
+		refs = append(refs, node.FileRef{
+			Path:   file.Path,
+			SHA256: file.SHA256,
+			Status: string(file.Status),
+		})
+	}
+	return refs
 }
 
 func buildProjectID(root string, files []File) string {

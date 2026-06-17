@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"malox/internal/node"
 	"malox/internal/scan"
 )
 
@@ -308,6 +309,7 @@ type snapshotDocument struct {
 	StartedAt          string                 `json:"started_at"`
 	FinishedAt         string                 `json:"finished_at"`
 	PackageManagers    []packageManagerSignal `json:"package_manager_signals,omitempty"`
+	Node               node.Inventory         `json:"node_inventory,omitempty"`
 	Files              []fileDocument         `json:"files"`
 	SkippedFiles       []skippedFileDocument  `json:"skipped_files,omitempty"`
 	SkippedDirectories []skippedDirDocument   `json:"skipped_directories,omitempty"`
@@ -395,6 +397,7 @@ func newSnapshotDocument(snapshot scan.Snapshot) snapshotDocument {
 		StartedAt:          formatTime(snapshot.StartedAt),
 		FinishedAt:         formatTime(snapshot.FinishedAt),
 		PackageManagers:    newPackageManagerSignals(snapshot.PackageManagers),
+		Node:               snapshot.Node,
 		Files:              newFileDocuments(snapshot.Files),
 		SkippedFiles:       newSkippedFileDocuments(snapshot.SkippedFiles),
 		SkippedDirectories: newSkippedDirDocuments(snapshot.SkippedDirectories),
@@ -532,6 +535,7 @@ func (d snapshotDocument) toSnapshot() (scan.Snapshot, error) {
 		StartedAt:          startedAt,
 		FinishedAt:         finishedAt,
 		PackageManagers:    d.scanSignals(),
+		Node:               d.Node,
 		Files:              files,
 		SkippedFiles:       d.scanSkippedFiles(),
 		SkippedDirectories: d.scanSkippedDirectories(),

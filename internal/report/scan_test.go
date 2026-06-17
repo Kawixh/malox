@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"malox/internal/node"
 	"malox/internal/scan"
 )
 
@@ -29,6 +30,22 @@ func TestWriteScanJSONUsesPublicSchema(t *testing.T) {
 				SHA256:       "abc123",
 				Type:         "node_manifest",
 				Status:       scan.StatusScanned,
+			},
+		},
+		Node: node.Inventory{
+			SchemaVersion: node.SchemaVersion,
+			Dependencies: []node.Dependency{
+				{
+					Name:           "left-pad",
+					Version:        "1.3.0",
+					PURL:           "pkg:npm/left-pad@1.3.0",
+					PackageManager: "npm",
+					SourcePath:     "package-lock.json",
+					PackagePath:    "node_modules/left-pad",
+				},
+			},
+			Summary: node.Summary{
+				DependencyCount: 1,
 			},
 		},
 		Summary: scan.Summary{
@@ -55,6 +72,9 @@ func TestWriteScanJSONUsesPublicSchema(t *testing.T) {
 	if len(document.Files) != 1 || document.Files[0].Path != "package.json" {
 		t.Fatalf("Files = %#v, want package.json", document.Files)
 	}
+	if document.NodeInventory.Summary.DependencyCount != 1 {
+		t.Fatalf("NodeInventory = %#v, want one dependency", document.NodeInventory)
+	}
 }
 
 func TestWriteScanTableSummarizesCounts(t *testing.T) {
@@ -67,13 +87,27 @@ func TestWriteScanTableSummarizesCounts(t *testing.T) {
 			ErroredFiles:       0,
 			SkippedDirectories: 3,
 		},
+		Node: node.Inventory{
+			Summary: node.Summary{
+				DependencyCount: 2,
+				LockfileCount:   1,
+				PackageScripts:  1,
+				Warnings:        1,
+			},
+		},
 	}
 
 	var out bytes.Buffer
 	if err := WriteScan(&out, snapshot, FormatTable); err != nil {
 		t.Fatalf("WriteScan() error = %v", err)
 	}
-	for _, want := range []string{"Scan snapshot", "2 scanned", "1 skipped", "Skipped directories: 3"} {
+	for _, want := range []string{
+		"Scan snapshot",
+		"2 scanned",
+		"1 skipped",
+		"Skipped directories: 3",
+		"Node inventory: 2 dependencies, 1 lockfiles, 1 package scripts, 1 warnings",
+	} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("table output missing %q:\n%s", want, out.String())
 		}

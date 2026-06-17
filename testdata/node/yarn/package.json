@@ -1,0 +1,7 @@
+{
+  "name": "yarn-app",
+  "version": "1.0.0",
+  "dependencies": {
+    "@scope/pkg": "^1.0.0"
+  }
+}

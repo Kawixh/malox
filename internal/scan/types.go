@@ -1,7 +1,11 @@
 // Package scan walks a project tree and builds deterministic scan snapshots.
 package scan
 
-import "time"
+import (
+	"time"
+
+	"malox/internal/node"
+)
 
 // SchemaVersion is the public scan snapshot schema emitted for milestone 2.
 const SchemaVersion = "malox.scan.snapshot.v1"
@@ -28,6 +32,7 @@ type Snapshot struct {
 	StartedAt          time.Time
 	FinishedAt         time.Time
 	PackageManagers    []PackageManagerSignal
+	Node               node.Inventory
 	Files              []File
 	SkippedFiles       []SkippedFile
 	SkippedDirectories []SkippedDirectory
@@ -36,11 +41,7 @@ type Snapshot struct {
 }
 
 // PackageManagerSignal describes a package manager clue discovered from names.
-type PackageManagerSignal struct {
-	Manager string
-	Kind    string
-	Path    string
-}
+type PackageManagerSignal = node.PackageManagerSignal
 
 // File describes one filesystem entry considered by the scanner.
 type File struct {

@@ -1,0 +1,14 @@
+{
+  // bun.lock is JSONC.
+  "lockfileVersion": 0,
+  "workspaces": {
+    "": {
+      "dependencies": {
+        "debug": "4.3.7",
+      },
+    },
+  },
+  "packages": {
+    "debug": ["debug@4.3.7", {}, "debug-4.3.7"],
+  },
+}

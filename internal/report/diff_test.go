@@ -23,10 +23,29 @@ func TestWriteDiffJSONUsesPublicSchema(t *testing.T) {
 				ToSize:   6,
 			},
 		},
-		RemovedFiles:          []diff.FileChange{},
-		ModifiedFiles:         []diff.FileChange{},
-		UnchangedFiles:        []diff.FileChange{},
-		SkippedFiles:          []diff.FileChange{},
+		RemovedFiles:   []diff.FileChange{},
+		ModifiedFiles:  []diff.FileChange{},
+		UnchangedFiles: []diff.FileChange{},
+		SkippedFiles:   []diff.FileChange{},
+		NewDependencies: []diff.DependencyChange{
+			{
+				Name:           "left-pad",
+				PackageManager: "npm",
+				ToVersion:      "1.3.0",
+				ToPURL:         "pkg:npm/left-pad@1.3.0",
+			},
+		},
+		RemovedDependencies: []diff.DependencyChange{},
+		UpdatedDependencies: []diff.DependencyChange{},
+		NewPackageScripts: []diff.PackageScriptChange{
+			{
+				PackageName:    "left-pad",
+				PackageManager: "package.json",
+				ScriptName:     "install",
+				ToCommand:      "node install.js",
+			},
+		},
+		ChangedPackageScripts: []diff.PackageScriptChange{},
 		NewFindings:           []diff.FindingChange{},
 		ResolvedFindings:      []diff.FindingChange{},
 		StillExistingFindings: []diff.FindingChange{},
@@ -46,6 +65,12 @@ func TestWriteDiffJSONUsesPublicSchema(t *testing.T) {
 	}
 	if len(document.AddedFiles) != 1 || document.AddedFiles[0].Path != "added.js" {
 		t.Fatalf("AddedFiles = %#v, want added.js", document.AddedFiles)
+	}
+	if len(document.NewDependencies) != 1 || document.NewDependencies[0].Name != "left-pad" {
+		t.Fatalf("NewDependencies = %#v, want left-pad", document.NewDependencies)
+	}
+	if len(document.NewPackageScripts) != 1 || document.NewPackageScripts[0].ScriptName != "install" {
+		t.Fatalf("NewPackageScripts = %#v, want install", document.NewPackageScripts)
 	}
 	if document.NewFindings == nil || document.ResolvedFindings == nil || document.StillExistingFindings == nil {
 		t.Fatalf("finding arrays must be present as empty arrays: %#v", document)

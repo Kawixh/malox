@@ -1,0 +1,13 @@
+lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      is-odd:
+        specifier: ^3.0.0
+        version: 3.0.1
+
+packages:
+  is-odd@3.0.1:
+    resolution:
+      integrity: sha512-odd

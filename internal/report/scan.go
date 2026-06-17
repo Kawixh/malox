@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"malox/internal/node"
 	"malox/internal/scan"
 )
 
@@ -20,6 +21,7 @@ type ScanSnapshot struct {
 	StartedAt          string                 `json:"started_at"`
 	FinishedAt         string                 `json:"finished_at"`
 	PackageManagers    []PackageManagerSignal `json:"package_manager_signals"`
+	NodeInventory      node.Inventory         `json:"node_inventory"`
 	Files              []FileRecord           `json:"files"`
 	SkippedFiles       []SkippedFile          `json:"skipped_files,omitempty"`
 	SkippedDirectories []SkippedDirectory     `json:"skipped_directories,omitempty"`
@@ -115,9 +117,9 @@ func writeScanTable(w io.Writer, snapshot scan.Snapshot) error {
 	if signals == "" {
 		signals = "none"
 	}
-	_, err := fmt.Fprintf(
+	if _, err := fmt.Fprintf(
 		w,
-		"Scan snapshot\nProject: %s\nProject ID: %s\nFiles: %d scanned, %d skipped, %d errors\nSkipped directories: %d\nPackage managers: %s\nnode_modules: %d files across %d packages\n",
+		"Scan snapshot\nProject: %s\nProject ID: %s\nFiles: %d scanned, %d skipped, %d errors\nSkipped directories: %d\nPackage managers: %s\nNode inventory: %d dependencies, %d lockfiles, %d package scripts, %d warnings\nnode_modules: %d files across %d packages\n",
 		snapshot.ProjectRoot,
 		snapshot.ProjectID,
 		snapshot.Summary.ScannedFiles,
@@ -125,21 +127,43 @@ func writeScanTable(w io.Writer, snapshot scan.Snapshot) error {
 		snapshot.Summary.ErroredFiles,
 		snapshot.Summary.SkippedDirectories,
 		signals,
+		snapshot.Node.Summary.DependencyCount,
+		snapshot.Node.Summary.LockfileCount,
+		snapshot.Node.Summary.PackageScripts,
+		snapshot.Node.Summary.Warnings,
 		snapshot.Summary.NodeModulesFiles,
 		snapshot.Summary.NodeModulesPackages,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+
+	if len(snapshot.Node.Warnings) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "Node warnings:"); err != nil {
+		return err
+	}
+	for _, warning := range snapshot.Node.Warnings {
+		if _, err := fmt.Fprintf(w, "  - %s: %s (%s)\n", warning.Path, warning.Message, warning.Code); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeScanPlain(w io.Writer, snapshot scan.Snapshot) error {
 	_, err := fmt.Fprintf(
 		w,
-		"scanned=%d skipped=%d errors=%d skipped_directories=%d package_managers=%d node_modules_files=%d\n",
+		"scanned=%d skipped=%d errors=%d skipped_directories=%d package_managers=%d node_dependencies=%d node_lockfiles=%d node_package_scripts=%d node_warnings=%d node_modules_files=%d\n",
 		snapshot.Summary.ScannedFiles,
 		snapshot.Summary.SkippedFiles,
 		snapshot.Summary.ErroredFiles,
 		snapshot.Summary.SkippedDirectories,
 		snapshot.Summary.PackageManagers,
+		snapshot.Node.Summary.DependencyCount,
+		snapshot.Node.Summary.LockfileCount,
+		snapshot.Node.Summary.PackageScripts,
+		snapshot.Node.Summary.Warnings,
 		snapshot.Summary.NodeModulesFiles,
 	)
 	return err
@@ -156,6 +180,7 @@ func NewScanSnapshot(snapshot scan.Snapshot) ScanSnapshot {
 		StartedAt:          formatTime(snapshot.StartedAt),
 		FinishedAt:         formatTime(snapshot.FinishedAt),
 		PackageManagers:    scanSignals(snapshot.PackageManagers),
+		NodeInventory:      snapshot.Node,
 		Files:              scanFiles(snapshot.Files),
 		SkippedFiles:       scanSkippedFiles(snapshot.SkippedFiles),
 		SkippedDirectories: scanSkippedDirectories(snapshot.SkippedDirectories),
