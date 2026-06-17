@@ -53,6 +53,9 @@ Global flags:
   --no-color      Disable color output
   --quiet         Suppress logs
   --verbose       Enable debug logs
+  --policy        Add an organization policy file
+  --no-builtin-rules
+                  Disable embedded conservative rules
 
 Examples:
   malox scan
@@ -76,6 +79,9 @@ Flags:
   --strict-hash    Rehash every candidate file
   --max-workers    Maximum worker count for scan work
   --max-file-size  Maximum file size in bytes
+  --policy         Add an organization policy file
+  --no-builtin-rules
+                   Disable embedded conservative rules
 
 Global flags:
   --config --state-dir --cache-dir --offline --no-color --quiet --verbose
@@ -115,14 +121,19 @@ func rulesHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Test local Malox rules against fixtures.
 
 Usage:
-  malox rules test [global flags]
+  malox rules test <rule-file> --fixture <path> [flags]
+
+Flags:
+  --fixture          Fixture project directory
+  --json             Shortcut for JSON output
+  --expect-findings  Expected finding count
 
 Global flags:
   --config --state-dir --cache-dir --offline --no-color --quiet --verbose
 
 Examples:
-  malox rules test
-  malox rules test --config ./malox.json
+  malox rules test ./policy.json --fixture ./testdata/project
+  malox rules test ./policy.json --fixture ./testdata/project --json
 `)
 	return err
 }

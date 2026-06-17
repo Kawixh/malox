@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"runtime"
 
 	"malox/internal/cache"
 	"malox/internal/config"
 	"malox/internal/diff"
 	"malox/internal/report"
+	"malox/internal/rules"
 	"malox/internal/scan"
 )
 
@@ -121,6 +123,13 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 
 	switch command {
 	case commandScan:
+		policies, err := rules.Load(ctx, rules.LoadOptions{
+			PolicyFiles: cfg.Rules.PolicyFiles,
+			UseBuiltins: cfg.Rules.UseBuiltins,
+		})
+		if err != nil {
+			return withExitCode(ExitUsage, fmt.Errorf("load rules: %w", err))
+		}
 		store, err := cache.NewStore(cfg.StateDir)
 		if err != nil {
 			return withExitCode(ExitScanFailed, fmt.Errorf("open project state: %w", err))
@@ -141,6 +150,7 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 			MaxFileSize:    cfg.Scan.MaxFileSize,
 			StrictHash:     cfg.Scan.StrictHash,
 			Previous:       previousSnapshot,
+			RulePolicies:   policies,
 		})
 		if err != nil {
 			return withExitCode(ExitScanFailed, fmt.Errorf("scan project: %w", err))
@@ -150,6 +160,9 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 		}
 		if err := report.WriteScan(stdout, snapshot, cfg.Scan.Output); err != nil {
 			return withExitCode(ExitScanFailed, fmt.Errorf("write scan report: %w", err))
+		}
+		if rules.HasBlockingFindings(snapshot.Findings) {
+			return withExitCode(ExitFindings, errors.New("blocking policy findings found"))
 		}
 		return nil
 	case commandDiff:
@@ -165,7 +178,7 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 		}
 		return nil
 	case commandRulesTest:
-		return withExitCode(ExitScanFailed, errors.New("rules test is not implemented yet; milestone 5 will add rule execution"))
+		return runRulesTest(ctx, cfg, stdout, build)
 	case commandCacheUpdate:
 		return withExitCode(ExitScanFailed, errors.New("cache update is not implemented yet; milestone 6 will add cache updates"))
 	case commandCacheClean:
@@ -173,6 +186,92 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 	default:
 		return usageError("command %q is not implemented", command.String())
 	}
+}
+
+func runRulesTest(ctx context.Context, cfg config.Values, stdout io.Writer, build BuildInfo) error {
+	if cfg.Rules.Test.RuleFile == "" {
+		return usageError("rules test requires a rule file")
+	}
+	if cfg.Rules.Test.Fixture == "" {
+		return usageError("rules test requires --fixture")
+	}
+	info, err := os.Stat(cfg.Rules.Test.Fixture)
+	if err != nil {
+		return withExitCode(ExitUsage, fmt.Errorf("fixture %q is not accessible: %w", cfg.Rules.Test.Fixture, err))
+	}
+	if !info.IsDir() {
+		return withExitCode(ExitUsage, fmt.Errorf("fixture %q must be a directory", cfg.Rules.Test.Fixture))
+	}
+
+	policies, err := rules.LoadFiles(ctx, []string{cfg.Rules.Test.RuleFile})
+	if err != nil {
+		return withExitCode(ExitUsage, fmt.Errorf("load rule file: %w", err))
+	}
+	expected := cfg.Rules.Test.ExpectedFindings
+	if expected == nil {
+		expected = policyExpectedFindings(policies)
+	}
+
+	snapshot, err := scan.Project(ctx, scan.Options{
+		Root:           cfg.Rules.Test.Fixture,
+		ScannerVersion: build.Version,
+		MaxWorkers:     cfg.Scan.MaxWorkers,
+		MaxFileSize:    cfg.Scan.MaxFileSize,
+		StrictHash:     true,
+	})
+	if err != nil {
+		return withExitCode(ExitScanFailed, fmt.Errorf("scan fixture: %w", err))
+	}
+	result, err := rules.Evaluate(ctx, rules.EvaluateOptions{
+		Root:        cfg.Rules.Test.Fixture,
+		Files:       appRuleFiles(snapshot.Files),
+		Node:        snapshot.Node,
+		Policies:    policies,
+		MaxFileSize: cfg.Scan.MaxFileSize,
+	})
+	if err != nil {
+		return withExitCode(ExitScanFailed, fmt.Errorf("evaluate rule file: %w", err))
+	}
+	testResult := rules.NewTestResult(
+		cfg.Rules.Test.RuleFile,
+		cfg.Rules.Test.Fixture,
+		result.Findings,
+		result.Warnings,
+		expected,
+	)
+	if err := report.WriteRulesTest(stdout, testResult, cfg.Rules.Test.Output); err != nil {
+		return withExitCode(ExitScanFailed, fmt.Errorf("write rules test report: %w", err))
+	}
+	if !testResult.Passed {
+		return withExitCode(ExitFindings, errors.New("rules test expectations failed"))
+	}
+	return nil
+}
+
+func appRuleFiles(files []scan.File) []rules.File {
+	refs := make([]rules.File, 0, len(files))
+	for _, file := range files {
+		if file.Status != scan.StatusScanned {
+			continue
+		}
+		refs = append(refs, rules.File{
+			Path:         file.Path,
+			SHA256:       file.SHA256,
+			Type:         file.Type,
+			PackageOwner: file.PackageOwner,
+			Size:         file.Size,
+		})
+	}
+	return refs
+}
+
+func policyExpectedFindings(policies []rules.Policy) *int {
+	for _, policy := range policies {
+		if policy.Tests != nil && policy.Tests.ExpectedFindings != nil {
+			return policy.Tests.ExpectedFindings
+		}
+	}
+	return nil
 }
 
 func runDiff(ctx context.Context, cfg config.Values) (diff.Report, error) {

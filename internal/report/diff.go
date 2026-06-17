@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"malox/internal/diff"
+	"malox/internal/rules"
 )
 
 // DiffReport is the public JSON contract for snapshot diffs.
@@ -69,9 +70,21 @@ type PackageScriptChange struct {
 	ToCommand      string `json:"to_command,omitempty"`
 }
 
-// FindingChange is reserved for later rule and threat milestones.
+// FindingChange is one finding transition in diff JSON output.
 type FindingChange struct {
-	ID string `json:"id,omitempty"`
+	ID          string           `json:"id,omitempty"`
+	RuleID      string           `json:"rule_id,omitempty"`
+	RuleType    string           `json:"rule_type,omitempty"`
+	Severity    rules.Severity   `json:"severity,omitempty"`
+	Confidence  rules.Confidence `json:"confidence,omitempty"`
+	Source      string           `json:"source,omitempty"`
+	Summary     string           `json:"summary,omitempty"`
+	Path        string           `json:"path,omitempty"`
+	PackageName string           `json:"package_name,omitempty"`
+	PURL        string           `json:"purl,omitempty"`
+	ScriptName  string           `json:"script_name,omitempty"`
+	Suppressed  bool             `json:"suppressed"`
+	Blocking    bool             `json:"blocking"`
 }
 
 // WriteDiff writes a snapshot diff in the requested output format.
@@ -219,7 +232,21 @@ func diffPackageScripts(changes []diff.PackageScriptChange) []PackageScriptChang
 func diffFindings(changes []diff.FindingChange) []FindingChange {
 	out := make([]FindingChange, 0, len(changes))
 	for _, change := range changes {
-		out = append(out, FindingChange{ID: change.ID})
+		out = append(out, FindingChange{
+			ID:          change.ID,
+			RuleID:      change.RuleID,
+			RuleType:    change.RuleType,
+			Severity:    change.Severity,
+			Confidence:  change.Confidence,
+			Source:      change.Source,
+			Summary:     change.Summary,
+			Path:        change.Path,
+			PackageName: change.PackageName,
+			PURL:        change.PURL,
+			ScriptName:  change.ScriptName,
+			Suppressed:  change.Suppressed,
+			Blocking:    change.Blocking,
+		})
 	}
 	return out
 }

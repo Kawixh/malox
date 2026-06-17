@@ -29,6 +29,7 @@ type Values struct {
 	Verbose    bool
 	Scan       Scan
 	Diff       Diff
+	Rules      Rules
 }
 
 // Scan contains configuration for the scan command.
@@ -47,6 +48,21 @@ type Diff struct {
 	Output report.Format
 }
 
+// Rules contains local policy configuration.
+type Rules struct {
+	PolicyFiles []string
+	UseBuiltins bool
+	Test        RulesTest
+}
+
+// RulesTest contains configuration for malox rules test.
+type RulesTest struct {
+	RuleFile         string
+	Fixture          string
+	Output           report.Format
+	ExpectedFindings *int
+}
+
 // FlagValues contains optional values parsed from CLI flags.
 type FlagValues struct {
 	ConfigPath *string
@@ -58,6 +74,7 @@ type FlagValues struct {
 	Verbose    *bool
 	Scan       ScanFlags
 	Diff       DiffFlags
+	Rules      RulesFlags
 }
 
 // ScanFlags contains optional scan values parsed from CLI flags.
@@ -75,6 +92,21 @@ type DiffFlags struct {
 	From *string
 	To   *string
 	JSON *bool
+}
+
+// RulesFlags contains optional rules values parsed from CLI flags.
+type RulesFlags struct {
+	PolicyFiles []string
+	UseBuiltins *bool
+	Test        RulesTestFlags
+}
+
+// RulesTestFlags contains optional rules test values parsed from CLI flags.
+type RulesTestFlags struct {
+	RuleFile         *string
+	Fixture          *string
+	JSON             *bool
+	ExpectedFindings *int
 }
 
 // LoadOptions describes how Load should resolve configuration.
@@ -122,6 +154,12 @@ func Load(ctx context.Context, opts LoadOptions) (Values, error) {
 		},
 		Diff: Diff{
 			Output: report.FormatTable,
+		},
+		Rules: Rules{
+			UseBuiltins: true,
+			Test: RulesTest{
+				Output: report.FormatTable,
+			},
 		},
 	}
 
@@ -259,6 +297,20 @@ func applyFlags(
 	if flags.Diff.JSON != nil && *flags.Diff.JSON {
 		values.Diff.Output = report.FormatJSON
 	}
+	for _, path := range flags.Rules.PolicyFiles {
+		applyPolicyPath(workDir, path, &values.Rules.PolicyFiles, &problems)
+	}
+	if flags.Rules.UseBuiltins != nil {
+		values.Rules.UseBuiltins = *flags.Rules.UseBuiltins
+	}
+	applyPath("--rules-test-file", flags.Rules.Test.RuleFile, &values.Rules.Test.RuleFile)
+	applyPath("--fixture", flags.Rules.Test.Fixture, &values.Rules.Test.Fixture)
+	if flags.Rules.Test.JSON != nil && *flags.Rules.Test.JSON {
+		values.Rules.Test.Output = report.FormatJSON
+	}
+	if flags.Rules.Test.ExpectedFindings != nil {
+		values.Rules.Test.ExpectedFindings = flags.Rules.Test.ExpectedFindings
+	}
 
 	return problems
 }
@@ -296,6 +348,7 @@ func (v Values) validationProblems() []string {
 	}
 	problems = append(problems, v.Scan.validationProblems()...)
 	problems = append(problems, v.Diff.validationProblems()...)
+	problems = append(problems, v.Rules.validationProblems()...)
 	return problems
 }
 
@@ -331,14 +384,23 @@ func (d Diff) validationProblems() []string {
 	return problems
 }
 
+func (r Rules) validationProblems() []string {
+	problems := []string{}
+	if !r.Test.Output.Valid() {
+		problems = append(problems, "rules test output must be one of table, json, or plain")
+	}
+	return problems
+}
+
 type fileConfig struct {
-	StateDir *string         `json:"state_dir"`
-	CacheDir *string         `json:"cache_dir"`
-	Offline  *bool           `json:"offline"`
-	NoColor  *bool           `json:"no_color"`
-	Quiet    *bool           `json:"quiet"`
-	Verbose  *bool           `json:"verbose"`
-	Scan     *fileScanConfig `json:"scan"`
+	StateDir *string          `json:"state_dir"`
+	CacheDir *string          `json:"cache_dir"`
+	Offline  *bool            `json:"offline"`
+	NoColor  *bool            `json:"no_color"`
+	Quiet    *bool            `json:"quiet"`
+	Verbose  *bool            `json:"verbose"`
+	Scan     *fileScanConfig  `json:"scan"`
+	Rules    *fileRulesConfig `json:"rules"`
 }
 
 type fileScanConfig struct {
@@ -348,6 +410,11 @@ type fileScanConfig struct {
 	StrictHash  *bool   `json:"strict_hash"`
 	MaxWorkers  *int    `json:"max_workers"`
 	MaxFileSize *int64  `json:"max_file_size"`
+}
+
+type fileRulesConfig struct {
+	PolicyFiles []string `json:"policy_files"`
+	UseBuiltins *bool    `json:"use_builtins"`
 }
 
 func readFile(path string) (fileConfig, error) {
@@ -410,7 +477,7 @@ func applyFile(workDir string, values *Values, cfg fileConfig) []string {
 		values.Verbose = *cfg.Verbose
 	}
 	if cfg.Scan == nil {
-		return problems
+		return applyFileRules(workDir, values, cfg.Rules, problems)
 	}
 
 	applyPath("scan.root", cfg.Scan.Root, &values.Scan.Root)
@@ -438,5 +505,31 @@ func applyFile(workDir string, values *Values, cfg fileConfig) []string {
 		values.Scan.Output = report.FormatJSON
 	}
 
+	return applyFileRules(workDir, values, cfg.Rules, problems)
+}
+
+func applyFileRules(workDir string, values *Values, cfg *fileRulesConfig, problems []string) []string {
+	if cfg == nil {
+		return problems
+	}
+	for _, path := range cfg.PolicyFiles {
+		applyPolicyPath(workDir, path, &values.Rules.PolicyFiles, &problems)
+	}
+	if cfg.UseBuiltins != nil {
+		values.Rules.UseBuiltins = *cfg.UseBuiltins
+	}
 	return problems
+}
+
+func applyPolicyPath(workDir, input string, target *[]string, problems *[]string) {
+	if strings.TrimSpace(input) == "" {
+		*problems = append(*problems, "policy file path is required")
+		return
+	}
+	resolved, err := platform.ResolvePath(workDir, input)
+	if err != nil {
+		*problems = append(*problems, fmt.Sprintf("resolve policy file: %v", err))
+		return
+	}
+	*target = append(*target, resolved)
 }

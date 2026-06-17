@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"malox/internal/node"
+	"malox/internal/rules"
 	"malox/internal/scan"
 )
 
@@ -45,9 +46,21 @@ type FileChange struct {
 	PackageOwner string
 }
 
-// FindingChange is reserved for milestone 5+ rule and threat findings.
+// FindingChange describes one finding-level state transition.
 type FindingChange struct {
-	ID string
+	ID          string
+	RuleID      string
+	RuleType    string
+	Severity    rules.Severity
+	Confidence  rules.Confidence
+	Source      string
+	Summary     string
+	Path        string
+	PackageName string
+	PURL        string
+	ScriptName  string
+	Suppressed  bool
+	Blocking    bool
 }
 
 // Compare returns a deterministic diff from oldSnapshot to newSnapshot.
@@ -101,6 +114,7 @@ func Compare(oldSnapshot, newSnapshot scan.Snapshot) Report {
 
 	compareDependencies(&report, oldSnapshot.Node.Dependencies, newSnapshot.Node.Dependencies)
 	comparePackageScripts(&report, oldSnapshot.Node.PackageScripts, newSnapshot.Node.PackageScripts)
+	compareFindings(&report, oldSnapshot.Findings, newSnapshot.Findings)
 	return report
 }
 
@@ -238,6 +252,25 @@ func comparePackageScripts(report *Report, oldScripts, newScripts []node.Package
 	}
 }
 
+func compareFindings(report *Report, oldFindings, newFindings []rules.Finding) {
+	oldIndex := indexFindings(oldFindings)
+	newIndex := indexFindings(newFindings)
+	keys := allFindingKeys(oldIndex, newIndex)
+
+	for _, key := range keys {
+		oldFinding, hadOld := oldIndex[key]
+		newFinding, hasNew := newIndex[key]
+		switch {
+		case !hadOld && hasNew:
+			report.NewFindings = append(report.NewFindings, findingChange(newFinding))
+		case hadOld && !hasNew:
+			report.ResolvedFindings = append(report.ResolvedFindings, findingChange(oldFinding))
+		case hadOld && hasNew:
+			report.StillExistingFindings = append(report.StillExistingFindings, findingChange(newFinding))
+		}
+	}
+}
+
 func indexDependencies(deps []node.Dependency) map[string]node.Dependency {
 	index := make(map[string]node.Dependency, len(deps))
 	for _, dep := range deps {
@@ -250,6 +283,14 @@ func indexPackageScripts(scripts []node.PackageScript) map[string]node.PackageSc
 	index := make(map[string]node.PackageScript, len(scripts))
 	for _, script := range scripts {
 		index[packageScriptIdentity(script)] = script
+	}
+	return index
+}
+
+func indexFindings(findings []rules.Finding) map[string]rules.Finding {
+	index := make(map[string]rules.Finding, len(findings))
+	for _, finding := range findings {
+		index[rules.FindingIdentity(finding)] = finding
 	}
 	return index
 }
@@ -285,6 +326,26 @@ func allScriptKeys(
 		keys = append(keys, key)
 	}
 	for key := range newScripts {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func allFindingKeys(
+	oldFindings map[string]rules.Finding,
+	newFindings map[string]rules.Finding,
+) []string {
+	keys := make([]string, 0, len(oldFindings)+len(newFindings))
+	seen := map[string]struct{}{}
+	for key := range oldFindings {
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	for key := range newFindings {
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -353,5 +414,23 @@ func packageScriptChange(oldScript, newScript node.PackageScript) PackageScriptC
 		ScriptName:     script.ScriptName,
 		FromCommand:    oldScript.Command,
 		ToCommand:      newScript.Command,
+	}
+}
+
+func findingChange(finding rules.Finding) FindingChange {
+	return FindingChange{
+		ID:          finding.ID,
+		RuleID:      finding.RuleID,
+		RuleType:    finding.RuleType,
+		Severity:    finding.Severity,
+		Confidence:  finding.Confidence,
+		Source:      finding.Source,
+		Summary:     finding.Summary,
+		Path:        finding.Path,
+		PackageName: finding.PackageName,
+		PURL:        finding.PURL,
+		ScriptName:  finding.ScriptName,
+		Suppressed:  finding.Suppressed,
+		Blocking:    finding.Blocking,
 	}
 }

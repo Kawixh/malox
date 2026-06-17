@@ -1,0 +1,5 @@
+{
+  "schema_version": "malox.rules.policy.v1",
+  "source": "builtin:allowlist-template",
+  "allowlist": []
+}

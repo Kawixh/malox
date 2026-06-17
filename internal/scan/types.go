@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"malox/internal/node"
+	"malox/internal/rules"
 )
 
 // SchemaVersion is the public scan snapshot schema emitted for milestone 2.
@@ -19,6 +20,7 @@ type Options struct {
 	MaxFileSize    int64
 	StrictHash     bool
 	Previous       *Snapshot
+	RulePolicies   []rules.Policy
 	Now            func() time.Time
 }
 
@@ -33,6 +35,7 @@ type Snapshot struct {
 	FinishedAt         time.Time
 	PackageManagers    []PackageManagerSignal
 	Node               node.Inventory
+	Findings           []rules.Finding
 	Files              []File
 	SkippedFiles       []SkippedFile
 	SkippedDirectories []SkippedDirectory
@@ -127,4 +130,8 @@ type Summary struct {
 	PackageManagers     int
 	NodeModulesFiles    int
 	NodeModulesPackages int
+	Findings            int
+	SuppressedFindings  int
+	BlockingFindings    int
+	WeakFindings        int
 }

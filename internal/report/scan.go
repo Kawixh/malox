@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"malox/internal/node"
+	"malox/internal/rules"
 	"malox/internal/scan"
 )
 
@@ -22,6 +23,7 @@ type ScanSnapshot struct {
 	FinishedAt         string                 `json:"finished_at"`
 	PackageManagers    []PackageManagerSignal `json:"package_manager_signals"`
 	NodeInventory      node.Inventory         `json:"node_inventory"`
+	Findings           []rules.Finding        `json:"findings"`
 	Files              []FileRecord           `json:"files"`
 	SkippedFiles       []SkippedFile          `json:"skipped_files,omitempty"`
 	SkippedDirectories []SkippedDirectory     `json:"skipped_directories,omitempty"`
@@ -90,6 +92,10 @@ type ScanSummary struct {
 	PackageManagers     int `json:"package_managers"`
 	NodeModulesFiles    int `json:"node_modules_files"`
 	NodeModulesPackages int `json:"node_modules_packages"`
+	Findings            int `json:"findings"`
+	SuppressedFindings  int `json:"suppressed_findings"`
+	BlockingFindings    int `json:"blocking_findings"`
+	WeakFindings        int `json:"weak_findings"`
 }
 
 // WriteScan writes a scan snapshot in the requested output format.
@@ -136,6 +142,16 @@ func writeScanTable(w io.Writer, snapshot scan.Snapshot) error {
 	); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintf(
+		w,
+		"Findings: %d total, %d blocking, %d suppressed, %d weak signals\n",
+		snapshot.Summary.Findings,
+		snapshot.Summary.BlockingFindings,
+		snapshot.Summary.SuppressedFindings,
+		snapshot.Summary.WeakFindings,
+	); err != nil {
+		return err
+	}
 
 	if len(snapshot.Node.Warnings) == 0 {
 		return nil
@@ -154,7 +170,7 @@ func writeScanTable(w io.Writer, snapshot scan.Snapshot) error {
 func writeScanPlain(w io.Writer, snapshot scan.Snapshot) error {
 	_, err := fmt.Fprintf(
 		w,
-		"scanned=%d skipped=%d errors=%d skipped_directories=%d package_managers=%d node_dependencies=%d node_lockfiles=%d node_package_scripts=%d node_warnings=%d node_modules_files=%d\n",
+		"scanned=%d skipped=%d errors=%d skipped_directories=%d package_managers=%d node_dependencies=%d node_lockfiles=%d node_package_scripts=%d node_warnings=%d node_modules_files=%d findings=%d blocking_findings=%d suppressed_findings=%d weak_findings=%d\n",
 		snapshot.Summary.ScannedFiles,
 		snapshot.Summary.SkippedFiles,
 		snapshot.Summary.ErroredFiles,
@@ -165,6 +181,10 @@ func writeScanPlain(w io.Writer, snapshot scan.Snapshot) error {
 		snapshot.Node.Summary.PackageScripts,
 		snapshot.Node.Summary.Warnings,
 		snapshot.Summary.NodeModulesFiles,
+		snapshot.Summary.Findings,
+		snapshot.Summary.BlockingFindings,
+		snapshot.Summary.SuppressedFindings,
+		snapshot.Summary.WeakFindings,
 	)
 	return err
 }
@@ -181,6 +201,7 @@ func NewScanSnapshot(snapshot scan.Snapshot) ScanSnapshot {
 		FinishedAt:         formatTime(snapshot.FinishedAt),
 		PackageManagers:    scanSignals(snapshot.PackageManagers),
 		NodeInventory:      snapshot.Node,
+		Findings:           scanFindings(snapshot.Findings),
 		Files:              scanFiles(snapshot.Files),
 		SkippedFiles:       scanSkippedFiles(snapshot.SkippedFiles),
 		SkippedDirectories: scanSkippedDirectories(snapshot.SkippedDirectories),
@@ -194,8 +215,19 @@ func NewScanSnapshot(snapshot scan.Snapshot) ScanSnapshot {
 			PackageManagers:     snapshot.Summary.PackageManagers,
 			NodeModulesFiles:    snapshot.Summary.NodeModulesFiles,
 			NodeModulesPackages: snapshot.Summary.NodeModulesPackages,
+			Findings:            snapshot.Summary.Findings,
+			SuppressedFindings:  snapshot.Summary.SuppressedFindings,
+			BlockingFindings:    snapshot.Summary.BlockingFindings,
+			WeakFindings:        snapshot.Summary.WeakFindings,
 		},
 	}
+}
+
+func scanFindings(findings []rules.Finding) []rules.Finding {
+	if len(findings) == 0 {
+		return []rules.Finding{}
+	}
+	return findings
 }
 
 func scanSignals(signals []scan.PackageManagerSignal) []PackageManagerSignal {

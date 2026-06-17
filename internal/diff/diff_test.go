@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"malox/internal/node"
+	"malox/internal/rules"
 	"malox/internal/scan"
 )
 
@@ -156,6 +157,60 @@ func TestCompareDependencyAndScriptChanges(t *testing.T) {
 	}
 	if len(report.NewPackageScripts) != 1 || report.NewPackageScripts[0].ScriptName != "postinstall" {
 		t.Fatalf("NewPackageScripts = %#v, want postinstall", report.NewPackageScripts)
+	}
+	if !report.HasRelevantChanges() {
+		t.Fatal("HasRelevantChanges() = false, want true")
+	}
+}
+
+func TestCompareFindingChanges(t *testing.T) {
+	oldSnapshot := scan.Snapshot{
+		ScanID: "old",
+		Findings: []rules.Finding{
+			{
+				ID:       "old-finding",
+				RuleID:   "rule:old",
+				RuleType: "detection",
+				Path:     "old.js",
+			},
+			{
+				ID:       "same-finding",
+				RuleID:   "rule:same",
+				RuleType: "detection",
+				Path:     "same.js",
+			},
+		},
+	}
+	newSnapshot := scan.Snapshot{
+		ScanID: "new",
+		Findings: []rules.Finding{
+			{
+				ID:       "same-finding",
+				RuleID:   "rule:same",
+				RuleType: "detection",
+				Path:     "same.js",
+			},
+			{
+				ID:         "new-finding",
+				RuleID:     "rule:new",
+				RuleType:   "blocklist",
+				Path:       "new.js",
+				Severity:   rules.SeverityCritical,
+				Confidence: rules.ConfidenceConfirmedMalicious,
+				Blocking:   true,
+			},
+		},
+	}
+
+	report := Compare(oldSnapshot, newSnapshot)
+	if len(report.NewFindings) != 1 || report.NewFindings[0].RuleID != "rule:new" {
+		t.Fatalf("NewFindings = %#v, want rule:new", report.NewFindings)
+	}
+	if len(report.ResolvedFindings) != 1 || report.ResolvedFindings[0].RuleID != "rule:old" {
+		t.Fatalf("ResolvedFindings = %#v, want rule:old", report.ResolvedFindings)
+	}
+	if len(report.StillExistingFindings) != 1 || report.StillExistingFindings[0].RuleID != "rule:same" {
+		t.Fatalf("StillExistingFindings = %#v, want rule:same", report.StillExistingFindings)
 	}
 	if !report.HasRelevantChanges() {
 		t.Fatal("HasRelevantChanges() = false, want true")

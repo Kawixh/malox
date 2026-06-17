@@ -226,6 +226,40 @@ func TestLoadReadsJSONConfigFile(t *testing.T) {
 	}
 }
 
+func TestLoadReadsRulesConfig(t *testing.T) {
+	workDir := t.TempDir()
+	configPath := filepath.Join(workDir, "malox.json")
+	configBody := `{
+  "rules": {
+    "policy_files": ["security/malox-policy.json"],
+    "use_builtins": false
+  }
+}`
+	if err := os.Mkdir(filepath.Join(workDir, "security"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	values, err := Load(t.Context(), LoadOptions{
+		WorkDir: workDir,
+		Flags: FlagValues{
+			ConfigPath: ptr(configPath),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	wantPolicy := filepath.Join(workDir, "security", "malox-policy.json")
+	if len(values.Rules.PolicyFiles) != 1 || values.Rules.PolicyFiles[0] != wantPolicy {
+		t.Fatalf("Rules.PolicyFiles = %#v, want %q", values.Rules.PolicyFiles, wantPolicy)
+	}
+	if values.Rules.UseBuiltins {
+		t.Fatal("Rules.UseBuiltins = true, want false")
+	}
+}
+
 func ptr[T any](v T) *T {
 	return &v
 }

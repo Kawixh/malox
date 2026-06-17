@@ -1,0 +1,29 @@
+{
+  "schema_version": "malox.rules.policy.v1",
+  "source": "builtin:rules",
+  "rules": [
+    {
+      "id": "builtin:suspicious-lifecycle-network-download",
+      "description": "lifecycle script downloads remote content",
+      "severity": "medium",
+      "confidence": "weak-signal",
+      "script_names": ["preinstall", "install", "postinstall", "prepare"],
+      "script_patterns": ["(?i)\\b(curl|wget|invoke-webrequest|iwr|fetch)\\b[^\\n]*(https?://|ftp://)"],
+      "suspicious_lifecycle_hooks": true
+    },
+    {
+      "id": "builtin:encoded-payload-indicator",
+      "description": "source file contains a long base64-like payload",
+      "severity": "medium",
+      "confidence": "weak-signal",
+      "file_patterns": [
+        {
+          "id": "long-base64-like-string",
+          "pattern": "[A-Za-z0-9+/]{240,}={0,2}",
+          "file_types": ["javascript", "javascript_react", "typescript", "typescript_react", "shell"],
+          "max_bytes": 1048576
+        }
+      ]
+    }
+  ]
+}

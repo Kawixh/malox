@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"malox/internal/node"
+	"malox/internal/rules"
 	"malox/internal/scan"
 )
 
@@ -310,6 +311,7 @@ type snapshotDocument struct {
 	FinishedAt         string                 `json:"finished_at"`
 	PackageManagers    []packageManagerSignal `json:"package_manager_signals,omitempty"`
 	Node               node.Inventory         `json:"node_inventory,omitempty"`
+	Findings           []rules.Finding        `json:"findings,omitempty"`
 	Files              []fileDocument         `json:"files"`
 	SkippedFiles       []skippedFileDocument  `json:"skipped_files,omitempty"`
 	SkippedDirectories []skippedDirDocument   `json:"skipped_directories,omitempty"`
@@ -371,6 +373,10 @@ type summaryDocument struct {
 	PackageManagers     int `json:"package_managers"`
 	NodeModulesFiles    int `json:"node_modules_files"`
 	NodeModulesPackages int `json:"node_modules_packages"`
+	Findings            int `json:"findings"`
+	SuppressedFindings  int `json:"suppressed_findings"`
+	BlockingFindings    int `json:"blocking_findings"`
+	WeakFindings        int `json:"weak_findings"`
 }
 
 type fileIndexRecord struct {
@@ -398,6 +404,7 @@ func newSnapshotDocument(snapshot scan.Snapshot) snapshotDocument {
 		FinishedAt:         formatTime(snapshot.FinishedAt),
 		PackageManagers:    newPackageManagerSignals(snapshot.PackageManagers),
 		Node:               snapshot.Node,
+		Findings:           snapshot.Findings,
 		Files:              newFileDocuments(snapshot.Files),
 		SkippedFiles:       newSkippedFileDocuments(snapshot.SkippedFiles),
 		SkippedDirectories: newSkippedDirDocuments(snapshot.SkippedDirectories),
@@ -411,6 +418,10 @@ func newSnapshotDocument(snapshot scan.Snapshot) snapshotDocument {
 			PackageManagers:     snapshot.Summary.PackageManagers,
 			NodeModulesFiles:    snapshot.Summary.NodeModulesFiles,
 			NodeModulesPackages: snapshot.Summary.NodeModulesPackages,
+			Findings:            snapshot.Summary.Findings,
+			SuppressedFindings:  snapshot.Summary.SuppressedFindings,
+			BlockingFindings:    snapshot.Summary.BlockingFindings,
+			WeakFindings:        snapshot.Summary.WeakFindings,
 		},
 	}
 }
@@ -536,6 +547,7 @@ func (d snapshotDocument) toSnapshot() (scan.Snapshot, error) {
 		FinishedAt:         finishedAt,
 		PackageManagers:    d.scanSignals(),
 		Node:               d.Node,
+		Findings:           d.Findings,
 		Files:              files,
 		SkippedFiles:       d.scanSkippedFiles(),
 		SkippedDirectories: d.scanSkippedDirectories(),
@@ -549,6 +561,10 @@ func (d snapshotDocument) toSnapshot() (scan.Snapshot, error) {
 			PackageManagers:     d.Summary.PackageManagers,
 			NodeModulesFiles:    d.Summary.NodeModulesFiles,
 			NodeModulesPackages: d.Summary.NodeModulesPackages,
+			Findings:            d.Summary.Findings,
+			SuppressedFindings:  d.Summary.SuppressedFindings,
+			BlockingFindings:    d.Summary.BlockingFindings,
+			WeakFindings:        d.Summary.WeakFindings,
 		},
 	}, nil
 }

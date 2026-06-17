@@ -18,6 +18,7 @@ import (
 
 	"malox/internal/fileid"
 	"malox/internal/node"
+	"malox/internal/rules"
 )
 
 type candidate struct {
@@ -91,7 +92,20 @@ func Project(ctx context.Context, opts Options) (Snapshot, error) {
 	}
 	signals = nodeInventory.Signals
 
+	ruleResult, err := rules.Evaluate(ctx, rules.EvaluateOptions{
+		Root:        root,
+		Files:       ruleFileRefs(files),
+		Node:        nodeInventory,
+		Policies:    opts.RulePolicies,
+		MaxFileSize: opts.MaxFileSize,
+		Now:         now().UTC(),
+	})
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("evaluate rules: %w", err)
+	}
+
 	issues := append(walkIssues, processIssues...)
+	issues = append(issues, ruleWarningIssues(ruleResult.Warnings)...)
 	sortSnapshotData(files, skippedFiles, skippedDirs, issues, signals)
 	signals = uniqueSignals(signals)
 
@@ -104,6 +118,7 @@ func Project(ctx context.Context, opts Options) (Snapshot, error) {
 		FinishedAt:         now().UTC(),
 		PackageManagers:    signals,
 		Node:               nodeInventory,
+		Findings:           ruleResult.Findings,
 		Files:              files,
 		SkippedFiles:       skippedFiles,
 		SkippedDirectories: skippedDirs,
@@ -621,6 +636,18 @@ func summarize(snapshot Snapshot) Summary {
 		}
 	}
 	summary.NodeModulesPackages = len(owners)
+	for _, finding := range snapshot.Findings {
+		summary.Findings++
+		if finding.Suppressed {
+			summary.SuppressedFindings++
+		}
+		if finding.Blocking && !finding.Suppressed {
+			summary.BlockingFindings++
+		}
+		if finding.Confidence == rules.ConfidenceWeakSignal {
+			summary.WeakFindings++
+		}
+	}
 	return summary
 }
 
@@ -634,6 +661,38 @@ func nodeFileRefs(files []File) []node.FileRef {
 		})
 	}
 	return refs
+}
+
+func ruleFileRefs(files []File) []rules.File {
+	refs := make([]rules.File, 0, len(files))
+	for _, file := range files {
+		if file.Status != StatusScanned {
+			continue
+		}
+		refs = append(refs, rules.File{
+			Path:         file.Path,
+			SHA256:       file.SHA256,
+			Type:         file.Type,
+			PackageOwner: file.PackageOwner,
+			Size:         file.Size,
+		})
+	}
+	return refs
+}
+
+func ruleWarningIssues(warnings []rules.Warning) []Issue {
+	if len(warnings) == 0 {
+		return nil
+	}
+	issues := make([]Issue, 0, len(warnings))
+	for _, warning := range warnings {
+		issues = append(issues, Issue{
+			Path:    warning.Path,
+			Code:    "rule_" + warning.Code,
+			Message: warning.Message,
+		})
+	}
+	return issues
 }
 
 func buildProjectID(root string, files []File) string {

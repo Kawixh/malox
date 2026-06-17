@@ -145,6 +145,7 @@ func parseInvocation(args []string) (invocation, error) {
 			}
 			inv.flags.Scan.JSON = &v
 			inv.flags.Diff.JSON = &v
+			inv.flags.Rules.Test.JSON = &v
 		case "output":
 			v, next, err := parseStringFlag(name, value, hasValue, args, i)
 			if err != nil {
@@ -186,6 +187,34 @@ func parseInvocation(args []string) (invocation, error) {
 			}
 			inv.flags.Diff.To = &v
 			i = next
+		case "policy":
+			v, next, err := parseStringFlag(name, value, hasValue, args, i)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Rules.PolicyFiles = append(inv.flags.Rules.PolicyFiles, v)
+			i = next
+		case "no-builtin-rules":
+			v, err := parseBoolFlag(name, value, hasValue)
+			if err != nil {
+				return invocation{}, err
+			}
+			useBuiltins := !v
+			inv.flags.Rules.UseBuiltins = &useBuiltins
+		case "fixture":
+			v, next, err := parseStringFlag(name, value, hasValue, args, i)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Rules.Test.Fixture = &v
+			i = next
+		case "expect-findings":
+			v, next, err := parseIntFlag(name, value, hasValue, args, i)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Rules.Test.ExpectedFindings = &v
+			i = next
 		default:
 			return invocation{}, usageError("unknown flag --%s", name)
 		}
@@ -199,8 +228,16 @@ func parseInvocation(args []string) (invocation, error) {
 	switch inv.command {
 	case commandScan:
 		inv.flags.Diff.JSON = nil
+		inv.flags.Rules.Test.JSON = nil
 	case commandDiff:
 		inv.flags.Scan.JSON = nil
+		inv.flags.Rules.Test.JSON = nil
+	case commandRulesTest:
+		inv.flags.Scan.JSON = nil
+		inv.flags.Diff.JSON = nil
+		if len(positionals) == 3 {
+			inv.flags.Rules.Test.RuleFile = &positionals[2]
+		}
 	}
 
 	if err := validateFlagScope(inv); err != nil {
@@ -319,7 +356,7 @@ func resolveCommand(positionals []string) (command, error) {
 		if len(positionals) == 1 {
 			return commandRules, nil
 		}
-		if len(positionals) == 2 && positionals[1] == "test" {
+		if (len(positionals) == 2 || len(positionals) == 3) && positionals[1] == "test" {
 			return commandRulesTest, nil
 		}
 		return commandRoot, usageError("unknown rules subcommand %q", strings.Join(positionals[1:], " "))
@@ -354,6 +391,12 @@ func validateFlagScope(inv invocation) error {
 		if inv.flags.Diff.To != nil {
 			return usageError("--to is only valid for diff")
 		}
+		if inv.flags.Rules.Test.Fixture != nil {
+			return usageError("--fixture is only valid for rules test")
+		}
+		if inv.flags.Rules.Test.ExpectedFindings != nil {
+			return usageError("--expect-findings is only valid for rules test")
+		}
 		return nil
 	}
 	if inv.command == commandDiff {
@@ -372,13 +415,43 @@ func validateFlagScope(inv invocation) error {
 		if inv.flags.Scan.MaxFileSize != nil {
 			return usageError("--max-file-size is only valid for scan")
 		}
+		if inv.flags.Rules.Test.Fixture != nil {
+			return usageError("--fixture is only valid for rules test")
+		}
+		if inv.flags.Rules.Test.ExpectedFindings != nil {
+			return usageError("--expect-findings is only valid for rules test")
+		}
+		return nil
+	}
+	if inv.command == commandRulesTest {
+		if inv.flags.Scan.Root != nil {
+			return usageError("--root is only valid for scan")
+		}
+		if inv.flags.Scan.Output != nil {
+			return usageError("--output is only valid for scan")
+		}
+		if inv.flags.Scan.StrictHash != nil {
+			return usageError("--strict-hash is only valid for scan")
+		}
+		if inv.flags.Scan.MaxWorkers != nil {
+			return usageError("--max-workers is only valid for scan")
+		}
+		if inv.flags.Scan.MaxFileSize != nil {
+			return usageError("--max-file-size is only valid for scan")
+		}
+		if inv.flags.Diff.From != nil {
+			return usageError("--from is only valid for diff")
+		}
+		if inv.flags.Diff.To != nil {
+			return usageError("--to is only valid for diff")
+		}
 		return nil
 	}
 	if inv.flags.Scan.Root != nil {
 		return usageError("--root is only valid for scan")
 	}
 	if inv.flags.Scan.JSON != nil {
-		return usageError("--json is only valid for scan or diff")
+		return usageError("--json is only valid for scan, diff, or rules test")
 	}
 	if inv.flags.Scan.Output != nil {
 		return usageError("--output is only valid for scan")
@@ -398,6 +471,12 @@ func validateFlagScope(inv invocation) error {
 	if inv.flags.Diff.To != nil {
 		return usageError("--to is only valid for diff")
 	}
+	if inv.flags.Rules.Test.Fixture != nil {
+		return usageError("--fixture is only valid for rules test")
+	}
+	if inv.flags.Rules.Test.ExpectedFindings != nil {
+		return usageError("--expect-findings is only valid for rules test")
+	}
 	return nil
 }
 
@@ -410,6 +489,14 @@ func validateCommandCompleteness(inv invocation) error {
 		return nil
 	case commandRules:
 		return usageError("rules requires a subcommand: test")
+	case commandRulesTest:
+		if inv.flags.Rules.Test.RuleFile == nil {
+			return usageError("rules test requires a rule file")
+		}
+		if inv.flags.Rules.Test.Fixture == nil {
+			return usageError("rules test requires --fixture")
+		}
+		return nil
 	case commandCache:
 		return usageError("cache requires a subcommand: update or clean")
 	default:

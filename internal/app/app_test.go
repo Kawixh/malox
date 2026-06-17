@@ -231,6 +231,116 @@ func TestRunRulesRequiresSubcommand(t *testing.T) {
 	}
 }
 
+func TestRunRulesTestJSON(t *testing.T) {
+	workDir := t.TempDir()
+	fixture := filepath.Join(workDir, "fixture")
+	if err := os.Mkdir(fixture, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policyPath := filepath.Join(workDir, "policy.json")
+	policy := `{
+  "schema_version": "malox.rules.policy.v1",
+  "rules": [{
+    "id": "test:path",
+    "description": "package manifest present",
+    "severity": "medium",
+    "confidence": "weak-signal",
+    "path_patterns": ["package.json"]
+  }]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runAppWithWorkDir(
+		t,
+		workDir,
+		"rules",
+		"test",
+		policyPath,
+		"--fixture",
+		fixture,
+		"--json",
+		"--expect-findings",
+		"1",
+	)
+	if code != ExitOK {
+		t.Fatalf("Run() exit code = %d, want %d; stderr = %q", code, ExitOK, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+
+	var document struct {
+		SchemaVersion string `json:"schema_version"`
+		Passed        bool   `json:"passed"`
+		MatchCount    int    `json:"match_count"`
+		Findings      []struct {
+			RuleID string `json:"rule_id"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+	}
+	if document.SchemaVersion != "malox.rules.test.v1" || !document.Passed || document.MatchCount != 1 {
+		t.Fatalf("rules test document = %#v, want passed one-match result", document)
+	}
+	if len(document.Findings) != 1 || document.Findings[0].RuleID != "test:path" {
+		t.Fatalf("findings = %#v, want test:path", document.Findings)
+	}
+}
+
+func TestRunScanReturnsFindingsExitForBlocklist(t *testing.T) {
+	workDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workDir, "blocked.js"), []byte("console.log('blocked')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policyPath := filepath.Join(workDir, "policy.json")
+	policy := `{
+  "schema_version": "malox.rules.policy.v1",
+  "blocklist": [{
+    "id": "block:path",
+    "path": "blocked.js"
+  }]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runAppWithWorkDir(
+		t,
+		workDir,
+		"scan",
+		"--root",
+		workDir,
+		"--policy",
+		policyPath,
+		"--json",
+	)
+	if code != ExitFindings {
+		t.Fatalf("Run() exit code = %d, want %d; stderr = %q", code, ExitFindings, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+
+	var document struct {
+		Findings []struct {
+			RuleID   string `json:"rule_id"`
+			Blocking bool   `json:"blocking"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+	}
+	if len(document.Findings) != 1 || document.Findings[0].RuleID != "block:path" || !document.Findings[0].Blocking {
+		t.Fatalf("findings = %#v, want blocking block:path", document.Findings)
+	}
+}
+
 func TestParseInvocationAllowsGlobalFlagsAfterCommand(t *testing.T) {
 	inv, err := parseInvocation([]string{
 		"scan",

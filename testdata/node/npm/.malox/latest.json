@@ -1,0 +1,185 @@
+{
+  "schema_version": "malox.scan.snapshot.v1",
+  "scanner_version": "dev",
+  "scan_id": "2026-06-17T12-44-05.188532000Z",
+  "project_id": "sha256:76211976caa22d1bb6f0a3b46247ebd47557f5633e60257b2400585465fb358f",
+  "project_root": ".",
+  "started_at": "2026-06-17T12:44:05.188532Z",
+  "finished_at": "2026-06-17T12:44:05.189856Z",
+  "package_manager_signals": [
+    {
+      "manager": "node",
+      "kind": "dependency_directory",
+      "path": "node_modules"
+    },
+    {
+      "manager": "node",
+      "kind": "manifest",
+      "path": "node_modules/left-pad/package.json"
+    },
+    {
+      "manager": "node",
+      "kind": "manifest",
+      "path": "package.json"
+    },
+    {
+      "manager": "npm",
+      "kind": "lockfile",
+      "path": "package-lock.json"
+    }
+  ],
+  "node_inventory": {
+    "schema_version": "malox.node.inventory.v1",
+    "package_manager_signals": [
+      {
+        "manager": "node",
+        "kind": "dependency_directory",
+        "path": "node_modules"
+      },
+      {
+        "manager": "node",
+        "kind": "manifest",
+        "path": "node_modules/left-pad/package.json"
+      },
+      {
+        "manager": "node",
+        "kind": "manifest",
+        "path": "package.json"
+      },
+      {
+        "manager": "npm",
+        "kind": "lockfile",
+        "path": "package-lock.json"
+      }
+    ],
+    "manifests": [
+      {
+        "path": "node_modules/left-pad/package.json",
+        "sha256": "8de4aaee3bc951d9033df26fab2d2a85490d1057889e0d31cce66a2bf399392a",
+        "manager": "node",
+        "kind": "manifest"
+      },
+      {
+        "path": "package.json",
+        "sha256": "eaea84201f0d2d82fc095552afaf67b9267d5ebe5889f1507f38cb9fa5d75069",
+        "manager": "node",
+        "kind": "manifest"
+      }
+    ],
+    "lockfiles": [
+      {
+        "path": "package-lock.json",
+        "sha256": "45bcb93faf2ae1f014800bbe44bccbcb6411fd7b445c2ee12bbef6219822862e",
+        "manager": "npm",
+        "kind": "lockfile"
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "left-pad",
+        "version": "1.3.0",
+        "purl": "pkg:npm/left-pad@1.3.0",
+        "package_manager_source": "npm",
+        "dependency_type": "dependencies",
+        "source_path": "package-lock.json",
+        "package_path": "node_modules/left-pad",
+        "integrity": "sha512-left",
+        "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+        "scripts": {
+          "install": "node install.js"
+        },
+        "has_install_script": true
+      },
+      {
+        "name": "left-pad",
+        "version": "1.3.0",
+        "purl": "pkg:npm/left-pad@1.3.0",
+        "package_manager_source": "package.json",
+        "dependency_type": "dependencies",
+        "source_path": "package.json"
+      }
+    ],
+    "package_scripts": [
+      {
+        "package_name": "left-pad",
+        "package_version": "1.3.0",
+        "purl": "pkg:npm/left-pad@1.3.0",
+        "package_manager_source": "package.json",
+        "source_path": "node_modules/left-pad/package.json",
+        "package_path": "node_modules/left-pad",
+        "script_name": "install",
+        "command": "node install.js"
+      },
+      {
+        "package_name": "npm-app",
+        "package_version": "1.0.0",
+        "purl": "pkg:npm/npm-app@1.0.0",
+        "package_manager_source": "package.json",
+        "source_path": "package.json",
+        "script_name": "postinstall",
+        "command": "node scripts/setup.js"
+      }
+    ],
+    "warnings": [],
+    "summary": {
+      "manifest_count": 2,
+      "lockfile_count": 1,
+      "dependency_count": 2,
+      "package_scripts": 2,
+      "warnings": 0
+    }
+  },
+  "files": [
+    {
+      "path": "node_modules/left-pad/package.json",
+      "size": 100,
+      "modified_time": "2026-06-17T12:09:42.945891994Z",
+      "mode": "-rw-r--r--",
+      "permissions": "0644",
+      "symlink": false,
+      "sha256": "8de4aaee3bc951d9033df26fab2d2a85490d1057889e0d31cce66a2bf399392a",
+      "type": "node_manifest",
+      "status": "scanned",
+      "state": "previously_unscanned",
+      "package_owner": "left-pad"
+    },
+    {
+      "path": "package-lock.json",
+      "size": 425,
+      "modified_time": "2026-06-17T12:09:42.749192701Z",
+      "mode": "-rw-r--r--",
+      "permissions": "0644",
+      "symlink": false,
+      "sha256": "45bcb93faf2ae1f014800bbe44bccbcb6411fd7b445c2ee12bbef6219822862e",
+      "type": "lockfile",
+      "status": "scanned",
+      "state": "previously_unscanned"
+    },
+    {
+      "path": "package.json",
+      "size": 158,
+      "modified_time": "2026-06-17T12:09:42.629421891Z",
+      "mode": "-rw-r--r--",
+      "permissions": "0644",
+      "symlink": false,
+      "sha256": "eaea84201f0d2d82fc095552afaf67b9267d5ebe5889f1507f38cb9fa5d75069",
+      "type": "node_manifest",
+      "status": "scanned",
+      "state": "previously_unscanned"
+    }
+  ],
+  "summary": {
+    "total_files": 3,
+    "scanned_files": 3,
+    "skipped_files": 0,
+    "errored_files": 0,
+    "skipped_directories": 0,
+    "package_managers": 4,
+    "node_modules_files": 1,
+    "node_modules_packages": 1,
+    "findings": 0,
+    "suppressed_findings": 0,
+    "blocking_findings": 0,
+    "weak_findings": 0
+  }
+}
