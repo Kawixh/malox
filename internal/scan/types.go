@@ -13,15 +13,16 @@ const SchemaVersion = "malox.scan.snapshot.v1"
 
 // Options configures one baseline project scan.
 type Options struct {
-	Root           string
-	StateDir       string
-	ScannerVersion string
-	MaxWorkers     int
-	MaxFileSize    int64
-	StrictHash     bool
-	Previous       *Snapshot
-	RulePolicies   []rules.Policy
-	Now            func() time.Time
+	Root              string
+	StateDir          string
+	ScannerVersion    string
+	MaxWorkers        int
+	MaxFileSize       int64
+	StrictHash        bool
+	Previous          *Snapshot
+	RulePolicies      []rules.Policy
+	DecodedPayloadDir string
+	Now               func() time.Time
 }
 
 // Snapshot stores the normalized result of one completed project scan.

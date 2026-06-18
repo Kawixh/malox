@@ -96,6 +96,44 @@ func TestProjectScansFilesDeterministically(t *testing.T) {
 	}
 }
 
+func TestProjectAddsJavaScriptObfuscationFindings(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := t.TempDir()
+	modTime := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	body := "const p = 'Y29uc29sZS5sb2coMSk='; eval(atob(p));\n"
+	writeTestFile(t, root, "node_modules/pkg/index.js", body, modTime)
+
+	snapshot, err := Project(t.Context(), Options{
+		Root:              root,
+		ScannerVersion:    "test-version",
+		MaxWorkers:        1,
+		MaxFileSize:       1024,
+		DecodedPayloadDir: cacheDir,
+		Now:               fixedNow(modTime),
+	})
+	if err != nil {
+		t.Fatalf("Project() error = %v", err)
+	}
+	if len(snapshot.Findings) == 0 {
+		t.Fatal("Findings = 0, want JavaScript obfuscation finding")
+	}
+	var decodedHash string
+	for _, finding := range snapshot.Findings {
+		if finding.RuleID == "jsanalysis:encoded-sink-flow" {
+			decodedHash = finding.Evidence[0].DecodedSHA256
+		}
+	}
+	if decodedHash == "" {
+		t.Fatalf("findings = %#v, want encoded sink flow with decoded hash", snapshot.Findings)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, decodedHash+".bin")); err != nil {
+		t.Fatalf("decoded payload cache not written: %v", err)
+	}
+	if snapshot.Summary.Findings != len(snapshot.Findings) || snapshot.Summary.WeakFindings == 0 {
+		t.Fatalf("summary = %#v, findings = %d", snapshot.Summary, len(snapshot.Findings))
+	}
+}
+
 func TestProjectReusesPreviousHashUnlessStrict(t *testing.T) {
 	root := t.TempDir()
 	modTime := time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)

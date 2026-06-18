@@ -206,12 +206,20 @@ type Evidence struct {
 	Maintainer     string `json:"maintainer,omitempty"`
 	ScriptName     string `json:"script_name,omitempty"`
 	Command        string `json:"command,omitempty"`
+	Expression     string `json:"expression,omitempty"`
+	DecodedSHA256  string `json:"decoded_sha256,omitempty"`
+	Classification string `json:"classification,omitempty"`
+	Decoder        string `json:"decoder,omitempty"`
+	Line           int    `json:"line,omitempty"`
+	Column         int    `json:"column,omitempty"`
 }
 
 // Location identifies the best available exact location for a finding.
 type Location struct {
 	Path       string `json:"path,omitempty"`
 	ScriptName string `json:"script_name,omitempty"`
+	Line       int    `json:"line,omitempty"`
+	Column     int    `json:"column,omitempty"`
 }
 
 // Suppression records the allowlist entry that suppressed a finding.

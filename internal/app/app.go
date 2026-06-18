@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"malox/internal/cache"
@@ -151,14 +152,15 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 			previousSnapshot = &previous
 		}
 		snapshot, err := scan.Project(ctx, scan.Options{
-			Root:           cfg.Scan.Root,
-			StateDir:       store.Dir(),
-			ScannerVersion: build.Version,
-			MaxWorkers:     cfg.Scan.MaxWorkers,
-			MaxFileSize:    cfg.Scan.MaxFileSize,
-			StrictHash:     cfg.Scan.StrictHash,
-			Previous:       previousSnapshot,
-			RulePolicies:   policies,
+			Root:              cfg.Scan.Root,
+			StateDir:          store.Dir(),
+			ScannerVersion:    build.Version,
+			MaxWorkers:        cfg.Scan.MaxWorkers,
+			MaxFileSize:       cfg.Scan.MaxFileSize,
+			StrictHash:        cfg.Scan.StrictHash,
+			Previous:          previousSnapshot,
+			RulePolicies:      policies,
+			DecodedPayloadDir: filepath.Join(globalCache.Dir(), "decoded-payloads", "sha256"),
 		})
 		if err != nil {
 			return withExitCode(ExitScanFailed, fmt.Errorf("scan project: %w", err))

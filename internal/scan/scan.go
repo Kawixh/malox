@@ -18,6 +18,7 @@ import (
 
 	"malox/internal/fileid"
 	"malox/internal/node"
+	"malox/internal/node/jsanalysis"
 	"malox/internal/rules"
 )
 
@@ -103,9 +104,19 @@ func Project(ctx context.Context, opts Options) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("evaluate rules: %w", err)
 	}
+	jsResult, err := jsanalysis.Analyze(ctx, jsanalysis.Options{
+		Root:              root,
+		Files:             jsAnalysisFileRefs(files),
+		MaxFileSize:       opts.MaxFileSize,
+		DecodedPayloadDir: opts.DecodedPayloadDir,
+	})
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("analyze javascript payloads: %w", err)
+	}
 
 	issues := append(walkIssues, processIssues...)
 	issues = append(issues, ruleWarningIssues(ruleResult.Warnings)...)
+	issues = append(issues, jsAnalysisWarningIssues(jsResult.Warnings)...)
 	sortSnapshotData(files, skippedFiles, skippedDirs, issues, signals)
 	signals = uniqueSignals(signals)
 
@@ -118,7 +129,7 @@ func Project(ctx context.Context, opts Options) (Snapshot, error) {
 		FinishedAt:         now().UTC(),
 		PackageManagers:    signals,
 		Node:               nodeInventory,
-		Findings:           ruleResult.Findings,
+		Findings:           append(ruleResult.Findings, jsResult.Findings...),
 		Files:              files,
 		SkippedFiles:       skippedFiles,
 		SkippedDirectories: skippedDirs,
@@ -688,6 +699,23 @@ func ruleFileRefs(files []File) []rules.File {
 	return refs
 }
 
+func jsAnalysisFileRefs(files []File) []jsanalysis.File {
+	refs := make([]jsanalysis.File, 0, len(files))
+	for _, file := range files {
+		if file.Status != StatusScanned {
+			continue
+		}
+		refs = append(refs, jsanalysis.File{
+			Path:         file.Path,
+			SHA256:       file.SHA256,
+			Type:         file.Type,
+			PackageOwner: file.PackageOwner,
+			Size:         file.Size,
+		})
+	}
+	return refs
+}
+
 func ruleWarningIssues(warnings []rules.Warning) []Issue {
 	if len(warnings) == 0 {
 		return nil
@@ -697,6 +725,21 @@ func ruleWarningIssues(warnings []rules.Warning) []Issue {
 		issues = append(issues, Issue{
 			Path:    warning.Path,
 			Code:    "rule_" + warning.Code,
+			Message: warning.Message,
+		})
+	}
+	return issues
+}
+
+func jsAnalysisWarningIssues(warnings []rules.Warning) []Issue {
+	if len(warnings) == 0 {
+		return nil
+	}
+	issues := make([]Issue, 0, len(warnings))
+	for _, warning := range warnings {
+		issues = append(issues, Issue{
+			Path:    warning.Path,
+			Code:    warning.Code,
 			Message: warning.Message,
 		})
 	}
