@@ -35,4 +35,4 @@ Every milestone must preserve the same engineering bar:
 8. [JavaScript Obfuscation And Payload Analysis](./08-javascript-obfuscation-and-payload-analysis.md)
 9. [Incremental `node_modules` Scanning](./09-incremental-node-modules-scanning.md)
 10. [Terminal UX, Reports, And Release Hardening](./10-terminal-ux-reports-release-hardening.md)
-
+11. [Homebrew Distribution And Update Checks](./11-homebrew-distribution-and-update-checks.md)
