@@ -49,12 +49,12 @@ brews:
     ids:
       - malox
     repository:
-      owner: Kawixh
+      owner: darckorp
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
-    homepage: "https://github.com/Kawixh/malox"
+    homepage: "https://github.com/darckorp/malox"
     description: "Fast cross-platform terminal security scanner for open source projects"
     license: "MIT"
     install: |
