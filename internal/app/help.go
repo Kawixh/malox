@@ -146,11 +146,12 @@ Usage:
   malox cache clean [--expired | --all --force] [global flags]
 
 Commands:
-  update  Prepare local cache metadata and bundled rule templates. Future source updates may use the network unless --offline is set.
+  update  Prepare local cache metadata and bundled rule templates. Source updates may use the network unless --offline is set.
   clean   Remove expired cache records by default.
 
 Flags:
   --json     Shortcut for JSON output
+  --source   Update only one source, such as osv, npm, or builtin-rules
   --expired  Remove only expired cache records (default)
   --all      Remove all cache records
   --force    Confirm destructive --all cleanup

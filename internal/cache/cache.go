@@ -188,6 +188,11 @@ func (s Store) snapshotPath(id string) (string, error) {
 	return filepath.Join(s.dir, "scans", id+".json"), nil
 }
 
+// WriteFileAtomic writes data by syncing a temp file and renaming it into place.
+func WriteFileAtomic(ctx context.Context, path string, data []byte, perm os.FileMode) error {
+	return writeFileAtomic(ctx, path, data, perm)
+}
+
 func writeFileAtomic(ctx context.Context, path string, data []byte, perm os.FileMode) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -311,6 +316,7 @@ type snapshotDocument struct {
 	FinishedAt         string                 `json:"finished_at"`
 	PackageManagers    []packageManagerSignal `json:"package_manager_signals,omitempty"`
 	Node               node.Inventory         `json:"node_inventory,omitempty"`
+	ThreatSources      []threatSourceDocument `json:"threat_sources,omitempty"`
 	Findings           []rules.Finding        `json:"findings,omitempty"`
 	Files              []fileDocument         `json:"files"`
 	SkippedFiles       []skippedFileDocument  `json:"skipped_files,omitempty"`
@@ -323,6 +329,18 @@ type packageManagerSignal struct {
 	Manager string `json:"manager"`
 	Kind    string `json:"kind"`
 	Path    string `json:"path"`
+}
+
+type threatSourceDocument struct {
+	SchemaVersion string `json:"schema_version,omitempty"`
+	Source        string `json:"source"`
+	Status        string `json:"status"`
+	Mode          string `json:"mode"`
+	FetchedAt     string `json:"fetched_at,omitempty"`
+	CacheAge      string `json:"cache_age,omitempty"`
+	Records       int    `json:"records,omitempty"`
+	Warning       string `json:"warning,omitempty"`
+	Required      bool   `json:"required,omitempty"`
 }
 
 type fileDocument struct {
@@ -404,6 +422,7 @@ func newSnapshotDocument(snapshot scan.Snapshot) snapshotDocument {
 		FinishedAt:         formatTime(snapshot.FinishedAt),
 		PackageManagers:    newPackageManagerSignals(snapshot.PackageManagers),
 		Node:               snapshot.Node,
+		ThreatSources:      newThreatSources(snapshot.ThreatSources),
 		Findings:           snapshot.Findings,
 		Files:              newFileDocuments(snapshot.Files),
 		SkippedFiles:       newSkippedFileDocuments(snapshot.SkippedFiles),
@@ -547,6 +566,7 @@ func (d snapshotDocument) toSnapshot() (scan.Snapshot, error) {
 		FinishedAt:         finishedAt,
 		PackageManagers:    d.scanSignals(),
 		Node:               d.Node,
+		ThreatSources:      d.scanThreatSources(),
 		Findings:           d.Findings,
 		Files:              files,
 		SkippedFiles:       d.scanSkippedFiles(),
@@ -567,6 +587,49 @@ func (d snapshotDocument) toSnapshot() (scan.Snapshot, error) {
 			WeakFindings:        d.Summary.WeakFindings,
 		},
 	}, nil
+}
+
+func newThreatSources(sources []scan.ThreatSourceStatus) []threatSourceDocument {
+	if len(sources) == 0 {
+		return nil
+	}
+	out := make([]threatSourceDocument, 0, len(sources))
+	for _, source := range sources {
+		out = append(out, threatSourceDocument{
+			SchemaVersion: source.SchemaVersion,
+			Source:        source.Source,
+			Status:        source.Status,
+			Mode:          source.Mode,
+			FetchedAt:     formatTime(source.FetchedAt),
+			CacheAge:      source.CacheAge,
+			Records:       source.Records,
+			Warning:       source.Warning,
+			Required:      source.Required,
+		})
+	}
+	return out
+}
+
+func (d snapshotDocument) scanThreatSources() []scan.ThreatSourceStatus {
+	if len(d.ThreatSources) == 0 {
+		return nil
+	}
+	out := make([]scan.ThreatSourceStatus, 0, len(d.ThreatSources))
+	for _, source := range d.ThreatSources {
+		fetchedAt, _ := parseTime(source.FetchedAt)
+		out = append(out, scan.ThreatSourceStatus{
+			SchemaVersion: source.SchemaVersion,
+			Source:        source.Source,
+			Status:        source.Status,
+			Mode:          source.Mode,
+			FetchedAt:     fetchedAt,
+			CacheAge:      source.CacheAge,
+			Records:       source.Records,
+			Warning:       source.Warning,
+			Required:      source.Required,
+		})
+	}
+	return out
 }
 
 func (d snapshotDocument) scanSignals() []scan.PackageManagerSignal {

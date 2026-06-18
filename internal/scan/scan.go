@@ -125,7 +125,7 @@ func Project(ctx context.Context, opts Options) (Snapshot, error) {
 		Errors:             issues,
 	}
 	snapshot.ProjectID = buildProjectID(root, files)
-	snapshot.Summary = summarize(snapshot)
+	RefreshSummary(&snapshot)
 	return snapshot, nil
 }
 
@@ -612,6 +612,14 @@ func uniqueSignals(signals []PackageManagerSignal) []PackageManagerSignal {
 		previous = signal
 	}
 	return unique
+}
+
+// RefreshSummary recalculates aggregate counts after scan-adjacent enrichments.
+func RefreshSummary(snapshot *Snapshot) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.Summary = summarize(*snapshot)
 }
 
 func summarize(snapshot Snapshot) Summary {

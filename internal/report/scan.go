@@ -23,6 +23,7 @@ type ScanSnapshot struct {
 	FinishedAt         string                 `json:"finished_at"`
 	PackageManagers    []PackageManagerSignal `json:"package_manager_signals"`
 	NodeInventory      node.Inventory         `json:"node_inventory"`
+	ThreatSources      []ThreatSourceStatus   `json:"threat_sources,omitempty"`
 	Findings           []rules.Finding        `json:"findings"`
 	Files              []FileRecord           `json:"files"`
 	SkippedFiles       []SkippedFile          `json:"skipped_files,omitempty"`
@@ -36,6 +37,19 @@ type PackageManagerSignal struct {
 	Manager string `json:"manager"`
 	Kind    string `json:"kind"`
 	Path    string `json:"path"`
+}
+
+// ThreatSourceStatus is one threat-intelligence source status in scan output.
+type ThreatSourceStatus struct {
+	SchemaVersion string `json:"schema_version,omitempty"`
+	Source        string `json:"source"`
+	Status        string `json:"status"`
+	Mode          string `json:"mode"`
+	FetchedAt     string `json:"fetched_at,omitempty"`
+	CacheAge      string `json:"cache_age,omitempty"`
+	Records       int    `json:"records,omitempty"`
+	Warning       string `json:"warning,omitempty"`
+	Required      bool   `json:"required,omitempty"`
 }
 
 // FileRecord is one file entry in scan JSON output.
@@ -152,6 +166,29 @@ func writeScanTable(w io.Writer, snapshot scan.Snapshot) error {
 	); err != nil {
 		return err
 	}
+	if len(snapshot.ThreatSources) > 0 {
+		if _, err := fmt.Fprintln(w, "Threat sources:"); err != nil {
+			return err
+		}
+		for _, source := range snapshot.ThreatSources {
+			if _, err := fmt.Fprintf(w, "  - %s: %s (%s", source.Source, source.Status, source.Mode); err != nil {
+				return err
+			}
+			if source.CacheAge != "" {
+				if _, err := fmt.Fprintf(w, ", cache_age=%s", source.CacheAge); err != nil {
+					return err
+				}
+			}
+			if source.Warning != "" {
+				if _, err := fmt.Fprintf(w, ", warning=%s", source.Warning); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(w, ")"); err != nil {
+				return err
+			}
+		}
+	}
 
 	if len(snapshot.Node.Warnings) == 0 {
 		return nil
@@ -201,6 +238,7 @@ func NewScanSnapshot(snapshot scan.Snapshot) ScanSnapshot {
 		FinishedAt:         formatTime(snapshot.FinishedAt),
 		PackageManagers:    scanSignals(snapshot.PackageManagers),
 		NodeInventory:      snapshot.Node,
+		ThreatSources:      scanThreatSources(snapshot.ThreatSources),
 		Findings:           scanFindings(snapshot.Findings),
 		Files:              scanFiles(snapshot.Files),
 		SkippedFiles:       scanSkippedFiles(snapshot.SkippedFiles),
@@ -221,6 +259,27 @@ func NewScanSnapshot(snapshot scan.Snapshot) ScanSnapshot {
 			WeakFindings:        snapshot.Summary.WeakFindings,
 		},
 	}
+}
+
+func scanThreatSources(sources []scan.ThreatSourceStatus) []ThreatSourceStatus {
+	if len(sources) == 0 {
+		return nil
+	}
+	out := make([]ThreatSourceStatus, 0, len(sources))
+	for _, source := range sources {
+		out = append(out, ThreatSourceStatus{
+			SchemaVersion: source.SchemaVersion,
+			Source:        source.Source,
+			Status:        source.Status,
+			Mode:          source.Mode,
+			FetchedAt:     formatTime(source.FetchedAt),
+			CacheAge:      source.CacheAge,
+			Records:       source.Records,
+			Warning:       source.Warning,
+			Required:      source.Required,
+		})
+	}
+	return out
 }
 
 func scanFindings(findings []rules.Finding) []rules.Finding {

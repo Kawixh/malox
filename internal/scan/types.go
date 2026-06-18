@@ -35,6 +35,7 @@ type Snapshot struct {
 	FinishedAt         time.Time
 	PackageManagers    []PackageManagerSignal
 	Node               node.Inventory
+	ThreatSources      []ThreatSourceStatus
 	Findings           []rules.Finding
 	Files              []File
 	SkippedFiles       []SkippedFile
@@ -45,6 +46,19 @@ type Snapshot struct {
 
 // PackageManagerSignal describes a package manager clue discovered from names.
 type PackageManagerSignal = node.PackageManagerSignal
+
+// ThreatSourceStatus summarizes one threat source consulted during a scan.
+type ThreatSourceStatus struct {
+	Source        string    `json:"source"`
+	Status        string    `json:"status"`
+	Mode          string    `json:"mode"`
+	FetchedAt     time.Time `json:"fetched_at,omitempty"`
+	CacheAge      string    `json:"cache_age,omitempty"`
+	Records       int       `json:"records,omitempty"`
+	Warning       string    `json:"warning,omitempty"`
+	Required      bool      `json:"required,omitempty"`
+	SchemaVersion string    `json:"schema_version,omitempty"`
+}
 
 // File describes one filesystem entry considered by the scanner.
 type File struct {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"malox/internal/platform"
@@ -31,6 +32,7 @@ type Values struct {
 	Diff       Diff
 	Cache      Cache
 	Rules      Rules
+	Threat     Threat
 }
 
 // Scan contains configuration for the scan command.
@@ -52,7 +54,16 @@ type Diff struct {
 // Cache contains configuration for cache management commands.
 type Cache struct {
 	Output report.Format
+	Source string
 	Clean  CacheClean
+}
+
+// Threat contains configured threat-intelligence source settings.
+type Threat struct {
+	Sources         []string
+	RequiredSources []string
+	OSVURL          string
+	NPMRegistryURL  string
 }
 
 // CacheClean contains configuration for malox cache clean.
@@ -111,8 +122,9 @@ type DiffFlags struct {
 
 // CacheFlags contains optional cache values parsed from CLI flags.
 type CacheFlags struct {
-	JSON  *bool
-	Clean CacheCleanFlags
+	JSON   *bool
+	Source *string
+	Clean  CacheCleanFlags
 }
 
 // CacheCleanFlags contains optional cache clean values parsed from CLI flags.
@@ -191,6 +203,9 @@ func Load(ctx context.Context, opts LoadOptions) (Values, error) {
 			Test: RulesTest{
 				Output: report.FormatTable,
 			},
+		},
+		Threat: Threat{
+			Sources: []string{"local-policy"},
 		},
 	}
 
@@ -331,6 +346,9 @@ func applyFlags(
 	if flags.Cache.JSON != nil && *flags.Cache.JSON {
 		values.Cache.Output = report.FormatJSON
 	}
+	if flags.Cache.Source != nil {
+		values.Cache.Source = strings.TrimSpace(*flags.Cache.Source)
+	}
 	if flags.Cache.Clean.Expired != nil {
 		values.Cache.Clean.Expired = *flags.Cache.Clean.Expired
 	}
@@ -393,6 +411,7 @@ func (v Values) validationProblems() []string {
 	problems = append(problems, v.Diff.validationProblems()...)
 	problems = append(problems, v.Cache.validationProblems()...)
 	problems = append(problems, v.Rules.validationProblems()...)
+	problems = append(problems, v.Threat.validationProblems()...)
 	return problems
 }
 
@@ -448,14 +467,15 @@ func (r Rules) validationProblems() []string {
 }
 
 type fileConfig struct {
-	StateDir *string          `json:"state_dir"`
-	CacheDir *string          `json:"cache_dir"`
-	Offline  *bool            `json:"offline"`
-	NoColor  *bool            `json:"no_color"`
-	Quiet    *bool            `json:"quiet"`
-	Verbose  *bool            `json:"verbose"`
-	Scan     *fileScanConfig  `json:"scan"`
-	Rules    *fileRulesConfig `json:"rules"`
+	StateDir *string           `json:"state_dir"`
+	CacheDir *string           `json:"cache_dir"`
+	Offline  *bool             `json:"offline"`
+	NoColor  *bool             `json:"no_color"`
+	Quiet    *bool             `json:"quiet"`
+	Verbose  *bool             `json:"verbose"`
+	Scan     *fileScanConfig   `json:"scan"`
+	Rules    *fileRulesConfig  `json:"rules"`
+	Threat   *fileThreatConfig `json:"threat"`
 }
 
 type fileScanConfig struct {
@@ -470,6 +490,13 @@ type fileScanConfig struct {
 type fileRulesConfig struct {
 	PolicyFiles []string `json:"policy_files"`
 	UseBuiltins *bool    `json:"use_builtins"`
+}
+
+type fileThreatConfig struct {
+	Sources         []string `json:"sources"`
+	RequiredSources []string `json:"required_sources"`
+	OSVURL          *string  `json:"osv_url"`
+	NPMRegistryURL  *string  `json:"npm_registry_url"`
 }
 
 func readFile(path string) (fileConfig, error) {
@@ -532,7 +559,8 @@ func applyFile(workDir string, values *Values, cfg fileConfig) []string {
 		values.Verbose = *cfg.Verbose
 	}
 	if cfg.Scan == nil {
-		return applyFileRules(workDir, values, cfg.Rules, problems)
+		problems = applyFileRules(workDir, values, cfg.Rules, problems)
+		return applyFileThreat(values, cfg.Threat, problems)
 	}
 
 	applyPath("scan.root", cfg.Scan.Root, &values.Scan.Root)
@@ -560,7 +588,8 @@ func applyFile(workDir string, values *Values, cfg fileConfig) []string {
 		values.Scan.Output = report.FormatJSON
 	}
 
-	return applyFileRules(workDir, values, cfg.Rules, problems)
+	problems = applyFileRules(workDir, values, cfg.Rules, problems)
+	return applyFileThreat(values, cfg.Threat, problems)
 }
 
 func applyFileRules(workDir string, values *Values, cfg *fileRulesConfig, problems []string) []string {
@@ -587,4 +616,45 @@ func applyPolicyPath(workDir, input string, target *[]string, problems *[]string
 		return
 	}
 	*target = append(*target, resolved)
+}
+
+func applyFileThreat(values *Values, cfg *fileThreatConfig, problems []string) []string {
+	if cfg == nil {
+		return problems
+	}
+	if cfg.Sources != nil {
+		values.Threat.Sources = cleanSourceList(cfg.Sources)
+	}
+	if cfg.RequiredSources != nil {
+		values.Threat.RequiredSources = cleanSourceList(cfg.RequiredSources)
+	}
+	if cfg.OSVURL != nil {
+		values.Threat.OSVURL = strings.TrimSpace(*cfg.OSVURL)
+	}
+	if cfg.NPMRegistryURL != nil {
+		values.Threat.NPMRegistryURL = strings.TrimSpace(*cfg.NPMRegistryURL)
+	}
+	return problems
+}
+
+func (t Threat) validationProblems() []string {
+	problems := []string{}
+	for _, source := range append(slices.Clone(t.Sources), t.RequiredSources...) {
+		if strings.TrimSpace(source) == "" {
+			problems = append(problems, "threat source name is required")
+		}
+	}
+	return problems
+}
+
+func cleanSourceList(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
 }

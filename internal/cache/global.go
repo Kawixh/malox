@@ -63,6 +63,7 @@ type GlobalIndex struct {
 // UpdateOptions configures a cache update.
 type UpdateOptions struct {
 	Offline bool
+	Source  string
 	Now     time.Time
 }
 
@@ -221,6 +222,10 @@ func (s GlobalStore) Update(ctx context.Context, opts UpdateOptions) (CommandRep
 	}
 	if opts.Offline {
 		report.Warnings = append(report.Warnings, "offline mode: remote source updates skipped")
+	}
+	source := strings.TrimSpace(opts.Source)
+	if source != "" && source != "builtin-rules" {
+		return report, nil
 	}
 
 	change, metadata, err := s.updateBuiltinRules(ctx, now)

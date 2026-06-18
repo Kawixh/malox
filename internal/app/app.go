@@ -16,6 +16,7 @@ import (
 	"malox/internal/report"
 	"malox/internal/rules"
 	"malox/internal/scan"
+	"malox/internal/threat"
 )
 
 // Options controls one CLI invocation.
@@ -162,6 +163,23 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 		if err != nil {
 			return withExitCode(ExitScanFailed, fmt.Errorf("scan project: %w", err))
 		}
+		threatResult, err := threat.Evaluate(ctx, snapshot.Node, threat.Options{
+			Store:           globalCache,
+			Offline:         cfg.Offline,
+			Sources:         cfg.Threat.Sources,
+			RequiredSources: cfg.Threat.RequiredSources,
+			OSVURL:          cfg.Threat.OSVURL,
+			NPMRegistryURL:  cfg.Threat.NPMRegistryURL,
+		})
+		if err != nil {
+			if errors.Is(err, threat.ErrRequiredSourceUnavailable) {
+				return withExitCode(ExitThreatUnavailable, err)
+			}
+			return withExitCode(ExitScanFailed, fmt.Errorf("evaluate threat sources: %w", err))
+		}
+		snapshot.Findings = append(snapshot.Findings, threatResult.Findings...)
+		snapshot.ThreatSources = threatResult.Sources
+		scan.RefreshSummary(&snapshot)
 		if err := store.WriteSnapshot(ctx, snapshot); err != nil {
 			return withExitCode(ExitScanFailed, fmt.Errorf("persist scan snapshot: %w", err))
 		}
@@ -193,10 +211,20 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 		}
 		result, err := globalCache.Update(ctx, cache.UpdateOptions{
 			Offline: cfg.Offline,
+			Source:  cfg.Cache.Source,
 		})
 		if err != nil {
 			return withExitCode(ExitScanFailed, fmt.Errorf("update cache: %w", err))
 		}
+		threatChanges, warnings, err := threat.UpdateSource(ctx, threat.Options{
+			Store:   globalCache,
+			Offline: cfg.Offline,
+		}, cfg.Cache.Source)
+		if err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("update threat source: %w", err))
+		}
+		result.Sources = append(result.Sources, threatChanges...)
+		result.Warnings = append(result.Warnings, warnings...)
 		if err := report.WriteCache(stdout, result, cfg.Cache.Output); err != nil {
 			return withExitCode(ExitScanFailed, fmt.Errorf("write cache report: %w", err))
 		}

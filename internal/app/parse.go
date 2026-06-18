@@ -147,6 +147,13 @@ func parseInvocation(args []string) (invocation, error) {
 			inv.flags.Diff.JSON = &v
 			inv.flags.Cache.JSON = &v
 			inv.flags.Rules.Test.JSON = &v
+		case "source":
+			v, next, err := parseStringFlag(name, value, hasValue, args, i)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Cache.Source = &v
+			i = next
 		case "output":
 			v, next, err := parseStringFlag(name, value, hasValue, args, i)
 			if err != nil {
@@ -513,6 +520,9 @@ func validateCacheFlagScope(inv invocation) error {
 	cacheCommand := inv.command == commandCacheUpdate || inv.command == commandCacheClean
 	if inv.flags.Cache.JSON != nil && !cacheCommand {
 		return usageError("--json is only valid for scan, diff, rules test, or cache commands")
+	}
+	if inv.flags.Cache.Source != nil && inv.command != commandCacheUpdate {
+		return usageError("--source is only valid for cache update")
 	}
 
 	cleanCommand := inv.command == commandCacheClean
