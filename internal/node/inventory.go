@@ -36,6 +36,7 @@ func Build(ctx context.Context, opts BuildOptions) (Inventory, error) {
 
 	manifestTypes := map[string]string{}
 	packageScriptsByPath := map[string][]PackageScript{}
+	packageMaintainersByPath := map[string][]string{}
 	for _, file := range scannedFiles(opts.Files) {
 		if err := ctx.Err(); err != nil {
 			return Inventory{}, fmt.Errorf("build node inventory: %w", err)
@@ -77,7 +78,9 @@ func Build(ctx context.Context, opts BuildOptions) (Inventory, error) {
 			}
 			scripts := packageScriptsFromManifest(file.Path, doc)
 			inv.PackageScripts = append(inv.PackageScripts, scripts...)
-			packageScriptsByPath[packageDirFromManifest(file.Path)] = scripts
+			packageDir := packageDirFromManifest(file.Path)
+			packageScriptsByPath[packageDir] = scripts
+			packageMaintainersByPath[packageDir] = peopleFromManifest(doc)
 		case "deno.json":
 			inv.Manifests = append(inv.Manifests, SourceFile{
 				Path:    file.Path,
@@ -106,6 +109,7 @@ func Build(ctx context.Context, opts BuildOptions) (Inventory, error) {
 	}
 
 	attachPackageScripts(inv.Dependencies, packageScriptsByPath)
+	attachPackageMaintainers(inv.Dependencies, packageMaintainersByPath)
 	sortInventory(&inv)
 	inv.Signals = uniqueSignals(inv.Signals)
 	inv.Dependencies = dedupeDependencies(inv.Dependencies)
@@ -266,6 +270,19 @@ func attachPackageScripts(deps []Dependency, scriptsByPath map[string][]PackageS
 		for _, script := range scripts {
 			deps[i].Scripts[script.ScriptName] = script.Command
 		}
+	}
+}
+
+func attachPackageMaintainers(deps []Dependency, maintainersByPath map[string][]string) {
+	for i := range deps {
+		if deps[i].PackagePath == "" {
+			continue
+		}
+		maintainers := maintainersByPath[deps[i].PackagePath]
+		if len(maintainers) == 0 {
+			continue
+		}
+		deps[i].Maintainers = slices.Clone(maintainers)
 	}
 }
 

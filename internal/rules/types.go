@@ -203,6 +203,7 @@ type Evidence struct {
 	PackageVersion string `json:"package_version,omitempty"`
 	PURL           string `json:"purl,omitempty"`
 	RegistryURL    string `json:"registry_url,omitempty"`
+	Maintainer     string `json:"maintainer,omitempty"`
 	ScriptName     string `json:"script_name,omitempty"`
 	Command        string `json:"command,omitempty"`
 }

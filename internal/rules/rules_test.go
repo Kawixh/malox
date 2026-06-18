@@ -102,6 +102,69 @@ func TestEvaluateExpiredAllowlistFailsClosed(t *testing.T) {
 	}
 }
 
+func TestEvaluateMaintainerBlocklist(t *testing.T) {
+	policy := Policy{
+		SchemaVersion: PolicySchemaVersion,
+		Source:        "test-policy",
+		Blocklist: []BlocklistEntry{
+			{
+				ID:         "block:maintainer",
+				Maintainer: "Example Maintainer",
+			},
+		},
+		Rules: []Rule{
+			{
+				ID:          "rule:maintainer",
+				Description: "maintainer requires review",
+				Severity:    SeverityMedium,
+				Confidence:  ConfidenceWeakSignal,
+				Maintainers: []string{"maintainer@example.test"},
+			},
+		},
+	}
+
+	result, err := Evaluate(t.Context(), EvaluateOptions{
+		Policies: []Policy{policy},
+		Node: node.Inventory{
+			Dependencies: []node.Dependency{
+				{
+					Name:        "left-pad",
+					Version:     "1.3.0",
+					PURL:        "pkg:npm/left-pad@1.3.0",
+					SourcePath:  "package-lock.json",
+					PackagePath: "node_modules/left-pad",
+					Maintainers: []string{"Example Maintainer", "maintainer@example.test"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if len(result.Findings) != 2 {
+		t.Fatalf("Findings length = %d, want 2", len(result.Findings))
+	}
+	var foundBlocklist bool
+	var foundRule bool
+	for _, finding := range result.Findings {
+		switch finding.RuleID {
+		case "block:maintainer":
+			foundBlocklist = finding.Blocking &&
+				finding.Confidence == ConfidenceConfirmedMalicious &&
+				finding.Maintainer == "Example Maintainer" &&
+				finding.Evidence[0].Kind == "maintainer"
+		case "rule:maintainer":
+			foundRule = !finding.Blocking &&
+				finding.Confidence == ConfidenceWeakSignal &&
+				finding.Maintainer == "maintainer@example.test" &&
+				finding.Evidence[0].Kind == "maintainer"
+		}
+	}
+	if !foundBlocklist || !foundRule {
+		t.Fatalf("findings = %#v, want maintainer blocklist and detection rule findings", result.Findings)
+	}
+}
+
 func TestEvaluateScriptAndFilePatterns(t *testing.T) {
 	root := t.TempDir()
 	writeRuleFixture(t, root, "src/index.js", "const payload = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';\n")

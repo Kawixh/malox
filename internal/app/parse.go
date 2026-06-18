@@ -145,6 +145,7 @@ func parseInvocation(args []string) (invocation, error) {
 			}
 			inv.flags.Scan.JSON = &v
 			inv.flags.Diff.JSON = &v
+			inv.flags.Cache.JSON = &v
 			inv.flags.Rules.Test.JSON = &v
 		case "output":
 			v, next, err := parseStringFlag(name, value, hasValue, args, i)
@@ -215,6 +216,24 @@ func parseInvocation(args []string) (invocation, error) {
 			}
 			inv.flags.Rules.Test.ExpectedFindings = &v
 			i = next
+		case "expired":
+			v, err := parseBoolFlag(name, value, hasValue)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Cache.Clean.Expired = &v
+		case "all":
+			v, err := parseBoolFlag(name, value, hasValue)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Cache.Clean.All = &v
+		case "force":
+			v, err := parseBoolFlag(name, value, hasValue)
+			if err != nil {
+				return invocation{}, err
+			}
+			inv.flags.Cache.Clean.Force = &v
 		default:
 			return invocation{}, usageError("unknown flag --%s", name)
 		}
@@ -228,16 +247,23 @@ func parseInvocation(args []string) (invocation, error) {
 	switch inv.command {
 	case commandScan:
 		inv.flags.Diff.JSON = nil
+		inv.flags.Cache.JSON = nil
 		inv.flags.Rules.Test.JSON = nil
 	case commandDiff:
 		inv.flags.Scan.JSON = nil
+		inv.flags.Cache.JSON = nil
 		inv.flags.Rules.Test.JSON = nil
 	case commandRulesTest:
 		inv.flags.Scan.JSON = nil
 		inv.flags.Diff.JSON = nil
+		inv.flags.Cache.JSON = nil
 		if len(positionals) == 3 {
 			inv.flags.Rules.Test.RuleFile = &positionals[2]
 		}
+	case commandCacheUpdate, commandCacheClean:
+		inv.flags.Scan.JSON = nil
+		inv.flags.Diff.JSON = nil
+		inv.flags.Rules.Test.JSON = nil
 	}
 
 	if err := validateFlagScope(inv); err != nil {
@@ -384,6 +410,9 @@ func resolveCommand(positionals []string) (command, error) {
 }
 
 func validateFlagScope(inv invocation) error {
+	if err := validateCacheFlagScope(inv); err != nil {
+		return err
+	}
 	if inv.command == commandScan {
 		if inv.flags.Diff.From != nil {
 			return usageError("--from is only valid for diff")
@@ -476,6 +505,25 @@ func validateFlagScope(inv invocation) error {
 	}
 	if inv.flags.Rules.Test.ExpectedFindings != nil {
 		return usageError("--expect-findings is only valid for rules test")
+	}
+	return nil
+}
+
+func validateCacheFlagScope(inv invocation) error {
+	cacheCommand := inv.command == commandCacheUpdate || inv.command == commandCacheClean
+	if inv.flags.Cache.JSON != nil && !cacheCommand {
+		return usageError("--json is only valid for scan, diff, rules test, or cache commands")
+	}
+
+	cleanCommand := inv.command == commandCacheClean
+	if inv.flags.Cache.Clean.Expired != nil && !cleanCommand {
+		return usageError("--expired is only valid for cache clean")
+	}
+	if inv.flags.Cache.Clean.All != nil && !cleanCommand {
+		return usageError("--all is only valid for cache clean")
+	}
+	if inv.flags.Cache.Clean.Force != nil && !cleanCommand {
+		return usageError("--force is only valid for cache clean")
 	}
 	return nil
 }

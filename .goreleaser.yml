@@ -43,3 +43,21 @@ snapshot:
 
 changelog:
   disable: true
+
+brews:
+  - name: malox
+    ids:
+      - malox
+    repository:
+      owner: Kawixh
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/Kawixh/malox"
+    description: "Fast cross-platform terminal security scanner for open source projects"
+    license: "MIT"
+    install: |
+      bin.install "malox"
+    test: |
+      system "#{bin}/malox", "--version"

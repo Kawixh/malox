@@ -143,13 +143,26 @@ func cacheHelp(w io.Writer) error {
 
 Usage:
   malox cache update [global flags]
-  malox cache clean [global flags]
+  malox cache clean [--expired | --all --force] [global flags]
+
+Commands:
+  update  Prepare local cache metadata and bundled rule templates. Future source updates may use the network unless --offline is set.
+  clean   Remove expired cache records by default.
+
+Flags:
+  --json     Shortcut for JSON output
+  --expired  Remove only expired cache records (default)
+  --all      Remove all cache records
+  --force    Confirm destructive --all cleanup
 
 Global flags:
   --config --state-dir --cache-dir --offline --no-color --quiet --verbose
 
 Examples:
   malox cache update
+  malox cache update --json
+  malox cache clean --expired
+  malox cache clean --all --force
   malox cache clean --cache-dir ~/.cache/malox
 `)
 	return err

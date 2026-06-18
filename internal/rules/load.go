@@ -17,6 +17,12 @@ import (
 //go:embed defaults/*.json
 var defaultPolicies embed.FS
 
+// BuiltinDocument is one embedded policy document.
+type BuiltinDocument struct {
+	Name string
+	Data []byte
+}
+
 // LoadOptions describes local policy sources.
 type LoadOptions struct {
 	PolicyFiles []string
@@ -48,12 +54,30 @@ func Load(ctx context.Context, opts LoadOptions) ([]Policy, error) {
 
 // LoadBuiltin returns policies embedded in the Malox binary.
 func LoadBuiltin() ([]Policy, error) {
+	docs, err := BuiltinDocuments()
+	if err != nil {
+		return nil, err
+	}
+
+	policies := make([]Policy, 0, len(docs))
+	for _, doc := range docs {
+		policy, err := DecodePolicy("builtin:"+doc.Name, doc.Data)
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, policy)
+	}
+	return policies, nil
+}
+
+// BuiltinDocuments returns the embedded local policy documents.
+func BuiltinDocuments() ([]BuiltinDocument, error) {
 	entries, err := fs.ReadDir(defaultPolicies, "defaults")
 	if err != nil {
 		return nil, fmt.Errorf("read built-in rules: %w", err)
 	}
 
-	policies := make([]Policy, 0, len(entries))
+	docs := make([]BuiltinDocument, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
@@ -63,13 +87,12 @@ func LoadBuiltin() ([]Policy, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read built-in policy %q: %w", entry.Name(), err)
 		}
-		policy, err := DecodePolicy("builtin:"+entry.Name(), data)
-		if err != nil {
-			return nil, err
-		}
-		policies = append(policies, policy)
+		docs = append(docs, BuiltinDocument{
+			Name: entry.Name(),
+			Data: data,
+		})
 	}
-	return policies, nil
+	return docs, nil
 }
 
 // LoadFiles reads policy files from disk.

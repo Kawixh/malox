@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 )
 
 type manifest struct {
 	Name                 string            `json:"name"`
 	Version              string            `json:"version"`
 	PackageManager       string            `json:"packageManager"`
+	Author               json.RawMessage   `json:"author"`
+	Maintainer           json.RawMessage   `json:"maintainer"`
+	Maintainers          json.RawMessage   `json:"maintainers"`
+	Contributors         json.RawMessage   `json:"contributors"`
+	Publisher            json.RawMessage   `json:"publisher"`
 	Scripts              map[string]string `json:"scripts"`
 	Dependencies         map[string]string `json:"dependencies"`
 	DevDependencies      map[string]string `json:"devDependencies"`
@@ -72,12 +78,14 @@ func packageScriptsFromManifest(path string, doc manifest) []PackageScript {
 
 	packagePath := packageDirFromManifest(path)
 	purl := NpmPURL(name, version)
+	maintainers := peopleFromManifest(doc)
 	scripts := make([]PackageScript, 0, len(doc.Scripts))
 	for _, scriptName := range sortedMapKeys(doc.Scripts) {
 		scripts = append(scripts, PackageScript{
 			PackageName:    name,
 			PackageVersion: version,
 			PURL:           purl,
+			Maintainers:    maintainers,
 			PackageManager: "package.json",
 			SourcePath:     path,
 			PackagePath:    packagePath,
@@ -86,6 +94,79 @@ func packageScriptsFromManifest(path string, doc manifest) []PackageScript {
 		})
 	}
 	return scripts
+}
+
+func peopleFromManifest(doc manifest) []string {
+	people := []string{}
+	for _, raw := range []json.RawMessage{
+		doc.Author,
+		doc.Maintainer,
+		doc.Maintainers,
+		doc.Contributors,
+		doc.Publisher,
+	} {
+		people = append(people, parsePeople(raw)...)
+	}
+	return uniqueSortedStrings(people)
+}
+
+func parsePeople(raw json.RawMessage) []string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	}
+
+	var object struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+		URL   string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &object); err == nil {
+		values := []string{}
+		for _, value := range []string{object.Name, object.Email, object.URL} {
+			value = strings.TrimSpace(value)
+			if value != "" {
+				values = append(values, value)
+			}
+		}
+		return values
+	}
+
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil
+	}
+	people := []string{}
+	for _, item := range items {
+		people = append(people, parsePeople(item)...)
+	}
+	return people
+}
+
+func uniqueSortedStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	slices.Sort(values)
+	out := values[:0]
+	var previous string
+	for i, value := range values {
+		if i > 0 && strings.EqualFold(value, previous) {
+			continue
+		}
+		out = append(out, value)
+		previous = value
+	}
+	return out
 }
 
 func readJSONStrict(r io.Reader, target any) error {

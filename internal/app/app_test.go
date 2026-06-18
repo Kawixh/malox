@@ -341,6 +341,142 @@ func TestRunScanReturnsFindingsExitForBlocklist(t *testing.T) {
 	}
 }
 
+func TestRunCacheUpdateJSON(t *testing.T) {
+	workDir := t.TempDir()
+	cacheDir := filepath.Join(workDir, "cache")
+
+	code, stdout, stderr := runAppWithWorkDir(
+		t,
+		workDir,
+		"cache",
+		"update",
+		"--cache-dir",
+		cacheDir,
+		"--json",
+	)
+	if code != ExitOK {
+		t.Fatalf("Run() exit code = %d, want %d; stderr = %q", code, ExitOK, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+
+	var document struct {
+		SchemaVersion string `json:"schema_version"`
+		Operation     string `json:"operation"`
+		Sources       []struct {
+			Source         string `json:"source"`
+			RecordsChanged int    `json:"records_changed"`
+			BytesWritten   int64  `json:"bytes_written"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+	}
+	if document.SchemaVersion != "malox.cache.report.v1" || document.Operation != "update" {
+		t.Fatalf("document = %#v, want cache update report", document)
+	}
+	if len(document.Sources) != 1 ||
+		document.Sources[0].Source != "builtin-rules" ||
+		document.Sources[0].RecordsChanged == 0 ||
+		document.Sources[0].BytesWritten == 0 {
+		t.Fatalf("sources = %#v, want builtin-rules changes", document.Sources)
+	}
+}
+
+func TestRunCacheCleanAllRequiresForce(t *testing.T) {
+	workDir := t.TempDir()
+	cacheDir := filepath.Join(workDir, "cache")
+
+	code, stdout, stderr := runAppWithWorkDir(
+		t,
+		workDir,
+		"cache",
+		"clean",
+		"--cache-dir",
+		cacheDir,
+		"--all",
+	)
+	if code != ExitUsage {
+		t.Fatalf("Run() exit code = %d, want %d", code, ExitUsage)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "requires --force") {
+		t.Fatalf("stderr missing force message: %q", stderr)
+	}
+}
+
+func TestRunCacheCleanAllForceJSON(t *testing.T) {
+	workDir := t.TempDir()
+	cacheDir := filepath.Join(workDir, "cache")
+	if code, _, stderr := runAppWithWorkDir(t, workDir, "cache", "update", "--cache-dir", cacheDir); code != ExitOK {
+		t.Fatalf("cache update exit code = %d, want %d; stderr = %q", code, ExitOK, stderr)
+	}
+
+	code, stdout, stderr := runAppWithWorkDir(
+		t,
+		workDir,
+		"cache",
+		"clean",
+		"--cache-dir",
+		cacheDir,
+		"--all",
+		"--force",
+		"--json",
+	)
+	if code != ExitOK {
+		t.Fatalf("Run() exit code = %d, want %d; stderr = %q", code, ExitOK, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+
+	var document struct {
+		Operation string `json:"operation"`
+		Sources   []struct {
+			Source       string `json:"source"`
+			BytesRemoved int64  `json:"bytes_removed"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &document); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, stdout)
+	}
+	if document.Operation != "clean" ||
+		len(document.Sources) != 1 ||
+		document.Sources[0].Source != "all" ||
+		document.Sources[0].BytesRemoved == 0 {
+		t.Fatalf("document = %#v, want forced all clean report", document)
+	}
+}
+
+func TestRunScanOfflinePreparesGlobalCache(t *testing.T) {
+	workDir := t.TempDir()
+	cacheDir := filepath.Join(workDir, "cache")
+	if err := os.WriteFile(filepath.Join(workDir, "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := runAppWithWorkDir(
+		t,
+		workDir,
+		"scan",
+		"--root",
+		workDir,
+		"--cache-dir",
+		cacheDir,
+		"--offline",
+		"--json",
+	)
+	if code != ExitOK {
+		t.Fatalf("Run() exit code = %d, want %d; stderr = %q", code, ExitOK, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "index-v1.json")); err != nil {
+		t.Fatalf("scan offline did not prepare global cache: %v", err)
+	}
+}
+
 func TestParseInvocationAllowsGlobalFlagsAfterCommand(t *testing.T) {
 	inv, err := parseInvocation([]string{
 		"scan",
@@ -360,6 +496,16 @@ func TestParseInvocationAllowsGlobalFlagsAfterCommand(t *testing.T) {
 	}
 	if inv.flags.Scan.MaxWorkers == nil || *inv.flags.Scan.MaxWorkers != 4 {
 		t.Fatalf("max workers = %v, want 4", inv.flags.Scan.MaxWorkers)
+	}
+}
+
+func TestParseInvocationRejectsCacheCleanFlagsOutsideCacheClean(t *testing.T) {
+	_, err := parseInvocation([]string{"scan", "--expired"})
+	if err == nil {
+		t.Fatal("parseInvocation() error = nil, want usage error")
+	}
+	if !strings.Contains(err.Error(), "--expired is only valid for cache clean") {
+		t.Fatalf("error = %q, want cache clean scope message", err)
 	}
 }
 

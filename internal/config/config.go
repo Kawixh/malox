@@ -29,6 +29,7 @@ type Values struct {
 	Verbose    bool
 	Scan       Scan
 	Diff       Diff
+	Cache      Cache
 	Rules      Rules
 }
 
@@ -46,6 +47,19 @@ type Diff struct {
 	From   string
 	To     string
 	Output report.Format
+}
+
+// Cache contains configuration for cache management commands.
+type Cache struct {
+	Output report.Format
+	Clean  CacheClean
+}
+
+// CacheClean contains configuration for malox cache clean.
+type CacheClean struct {
+	Expired bool
+	All     bool
+	Force   bool
 }
 
 // Rules contains local policy configuration.
@@ -74,6 +88,7 @@ type FlagValues struct {
 	Verbose    *bool
 	Scan       ScanFlags
 	Diff       DiffFlags
+	Cache      CacheFlags
 	Rules      RulesFlags
 }
 
@@ -92,6 +107,19 @@ type DiffFlags struct {
 	From *string
 	To   *string
 	JSON *bool
+}
+
+// CacheFlags contains optional cache values parsed from CLI flags.
+type CacheFlags struct {
+	JSON  *bool
+	Clean CacheCleanFlags
+}
+
+// CacheCleanFlags contains optional cache clean values parsed from CLI flags.
+type CacheCleanFlags struct {
+	Expired *bool
+	All     *bool
+	Force   *bool
 }
 
 // RulesFlags contains optional rules values parsed from CLI flags.
@@ -153,6 +181,9 @@ func Load(ctx context.Context, opts LoadOptions) (Values, error) {
 			MaxFileSize: defaultMaxFileSize,
 		},
 		Diff: Diff{
+			Output: report.FormatTable,
+		},
+		Cache: Cache{
 			Output: report.FormatTable,
 		},
 		Rules: Rules{
@@ -297,6 +328,18 @@ func applyFlags(
 	if flags.Diff.JSON != nil && *flags.Diff.JSON {
 		values.Diff.Output = report.FormatJSON
 	}
+	if flags.Cache.JSON != nil && *flags.Cache.JSON {
+		values.Cache.Output = report.FormatJSON
+	}
+	if flags.Cache.Clean.Expired != nil {
+		values.Cache.Clean.Expired = *flags.Cache.Clean.Expired
+	}
+	if flags.Cache.Clean.All != nil {
+		values.Cache.Clean.All = *flags.Cache.Clean.All
+	}
+	if flags.Cache.Clean.Force != nil {
+		values.Cache.Clean.Force = *flags.Cache.Clean.Force
+	}
 	for _, path := range flags.Rules.PolicyFiles {
 		applyPolicyPath(workDir, path, &values.Rules.PolicyFiles, &problems)
 	}
@@ -348,6 +391,7 @@ func (v Values) validationProblems() []string {
 	}
 	problems = append(problems, v.Scan.validationProblems()...)
 	problems = append(problems, v.Diff.validationProblems()...)
+	problems = append(problems, v.Cache.validationProblems()...)
 	problems = append(problems, v.Rules.validationProblems()...)
 	return problems
 }
@@ -380,6 +424,17 @@ func (d Diff) validationProblems() []string {
 	}
 	if !d.Output.Valid() {
 		problems = append(problems, "diff output must be one of table, json, or plain")
+	}
+	return problems
+}
+
+func (c Cache) validationProblems() []string {
+	problems := []string{}
+	if !c.Output.Valid() {
+		problems = append(problems, "cache output must be one of table, json, or plain")
+	}
+	if c.Clean.Expired && c.Clean.All {
+		problems = append(problems, "--expired and --all cannot both be set")
 	}
 	return problems
 }

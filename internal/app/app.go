@@ -123,6 +123,13 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 
 	switch command {
 	case commandScan:
+		globalCache, err := cache.NewGlobalStore(cfg.CacheDir)
+		if err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("open global cache: %w", err))
+		}
+		if err := globalCache.Ensure(ctx); err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("prepare global cache: %w", err))
+		}
 		policies, err := rules.Load(ctx, rules.LoadOptions{
 			PolicyFiles: cfg.Rules.PolicyFiles,
 			UseBuiltins: cfg.Rules.UseBuiltins,
@@ -180,9 +187,40 @@ func runCommand(ctx context.Context, command command, cfg config.Values, stdout 
 	case commandRulesTest:
 		return runRulesTest(ctx, cfg, stdout, build)
 	case commandCacheUpdate:
-		return withExitCode(ExitScanFailed, errors.New("cache update is not implemented yet; milestone 6 will add cache updates"))
+		globalCache, err := cache.NewGlobalStore(cfg.CacheDir)
+		if err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("open global cache: %w", err))
+		}
+		result, err := globalCache.Update(ctx, cache.UpdateOptions{
+			Offline: cfg.Offline,
+		})
+		if err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("update cache: %w", err))
+		}
+		if err := report.WriteCache(stdout, result, cfg.Cache.Output); err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("write cache report: %w", err))
+		}
+		return nil
 	case commandCacheClean:
-		return withExitCode(ExitScanFailed, errors.New("cache clean is not implemented yet; milestone 6 will add cache cleanup"))
+		globalCache, err := cache.NewGlobalStore(cfg.CacheDir)
+		if err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("open global cache: %w", err))
+		}
+		result, err := globalCache.Clean(ctx, cache.CleanOptions{
+			Expired: cfg.Cache.Clean.Expired,
+			All:     cfg.Cache.Clean.All,
+			Force:   cfg.Cache.Clean.Force,
+		})
+		if err != nil {
+			if errors.Is(err, cache.ErrCleanAllRequiresForce) {
+				return withExitCode(ExitUsage, err)
+			}
+			return withExitCode(ExitScanFailed, fmt.Errorf("clean cache: %w", err))
+		}
+		if err := report.WriteCache(stdout, result, cfg.Cache.Output); err != nil {
+			return withExitCode(ExitScanFailed, fmt.Errorf("write cache report: %w", err))
+		}
+		return nil
 	default:
 		return usageError("command %q is not implemented", command.String())
 	}

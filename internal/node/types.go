@@ -50,6 +50,7 @@ type Dependency struct {
 	Name             string            `json:"name"`
 	Version          string            `json:"version,omitempty"`
 	PURL             string            `json:"purl,omitempty"`
+	Maintainers      []string          `json:"maintainers,omitempty"`
 	PackageManager   string            `json:"package_manager_source"`
 	DependencyType   string            `json:"dependency_type,omitempty"`
 	SourcePath       string            `json:"source_path"`
@@ -62,14 +63,15 @@ type Dependency struct {
 
 // PackageScript describes one lifecycle or package script without executing it.
 type PackageScript struct {
-	PackageName    string `json:"package_name,omitempty"`
-	PackageVersion string `json:"package_version,omitempty"`
-	PURL           string `json:"purl,omitempty"`
-	PackageManager string `json:"package_manager_source"`
-	SourcePath     string `json:"source_path"`
-	PackagePath    string `json:"package_path,omitempty"`
-	ScriptName     string `json:"script_name"`
-	Command        string `json:"command"`
+	PackageName    string   `json:"package_name,omitempty"`
+	PackageVersion string   `json:"package_version,omitempty"`
+	PURL           string   `json:"purl,omitempty"`
+	Maintainers    []string `json:"maintainers,omitempty"`
+	PackageManager string   `json:"package_manager_source"`
+	SourcePath     string   `json:"source_path"`
+	PackagePath    string   `json:"package_path,omitempty"`
+	ScriptName     string   `json:"script_name"`
+	Command        string   `json:"command"`
 }
 
 // Warning reports a malformed or unsupported project metadata file.

@@ -44,6 +44,10 @@ func TestBuildNpmInventory(t *testing.T) {
 	if lockDep.Integrity != "sha512-left" || !lockDep.HasInstallScript {
 		t.Fatalf("left-pad metadata = %#v", lockDep)
 	}
+	if !slices.Contains(lockDep.Maintainers, "Example Maintainer") ||
+		!slices.Contains(lockDep.Maintainers, "maintainer@example.test") {
+		t.Fatalf("left-pad maintainers = %#v, want manifest maintainers", lockDep.Maintainers)
+	}
 	if lockDep.Scripts["install"] != "node install.js" {
 		t.Fatalf("left-pad scripts = %#v, want install script", lockDep.Scripts)
 	}
@@ -51,6 +55,9 @@ func TestBuildNpmInventory(t *testing.T) {
 	script := findScript(t, inv, "left-pad", "install")
 	if script.Command != "node install.js" {
 		t.Fatalf("script command = %q", script.Command)
+	}
+	if !slices.Contains(script.Maintainers, "Example Maintainer") {
+		t.Fatalf("script maintainers = %#v, want Example Maintainer", script.Maintainers)
 	}
 }
 

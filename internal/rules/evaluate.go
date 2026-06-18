@@ -107,6 +107,8 @@ func blocklistFindings(policy Policy, block BlocklistEntry, files []File, inv no
 			findings = append(findings, newBlocklistDependencyFinding(policy, block, dep, "purl"))
 		case block.URL != "" && block.URL == dep.Resolved:
 			findings = append(findings, newBlocklistDependencyFinding(policy, block, dep, "url"))
+		case block.Maintainer != "" && matchAnyFold(dep.Maintainers, block.Maintainer):
+			findings = append(findings, newBlocklistDependencyFinding(policy, block, dep, "maintainer"))
 		}
 	}
 	return findings
@@ -196,6 +198,19 @@ func dependencyRuleFindings(policy Policy, rule Rule, dep node.Dependency) []Fin
 			PackageVersion: dep.Version,
 			PURL:           dep.PURL,
 			RegistryURL:    dep.Resolved,
+		}))
+	}
+	for _, maintainer := range dep.Maintainers {
+		if !matchAnyFold(rule.Maintainers, maintainer) {
+			continue
+		}
+		findings = append(findings, newDependencyRuleFinding(policy, rule, dep, Evidence{
+			Kind:           "maintainer",
+			Value:          maintainer,
+			PackageName:    dep.Name,
+			PackageVersion: dep.Version,
+			PURL:           dep.PURL,
+			Maintainer:     maintainer,
 		}))
 	}
 	return findings
@@ -391,15 +406,17 @@ func newBlocklistDependencyFinding(policy Policy, block BlocklistEntry, dep node
 		PackageVersion: dep.Version,
 		PURL:           dep.PURL,
 		RegistryURL:    dep.Resolved,
+		Maintainer:     matchedMaintainer(block, dep),
 		Location:       &Location{Path: dep.SourcePath},
 		Blocking:       true,
 		Evidence: []Evidence{{
 			Kind:           matched,
-			Value:          firstNonEmpty(block.Package, block.PURL, block.URL),
+			Value:          firstNonEmpty(block.Package, block.PURL, block.URL, block.Maintainer),
 			PackageName:    dep.Name,
 			PackageVersion: dep.Version,
 			PURL:           dep.PURL,
 			RegistryURL:    dep.Resolved,
+			Maintainer:     matchedMaintainer(block, dep),
 		}},
 	}
 	finding.ID = findingID(finding)
@@ -441,11 +458,24 @@ func newDependencyRuleFinding(policy Policy, rule Rule, dep node.Dependency, evi
 		PackageVersion: dep.Version,
 		PURL:           dep.PURL,
 		RegistryURL:    dep.Resolved,
+		Maintainer:     evidence.Maintainer,
 		Location:       &Location{Path: dep.SourcePath},
 		Blocking:       false,
 	}
 	finding.ID = findingID(finding)
 	return finding
+}
+
+func matchedMaintainer(block BlocklistEntry, dep node.Dependency) string {
+	if block.Maintainer == "" {
+		return ""
+	}
+	for _, maintainer := range dep.Maintainers {
+		if strings.EqualFold(maintainer, block.Maintainer) {
+			return maintainer
+		}
+	}
+	return block.Maintainer
 }
 
 func newScriptRuleFinding(policy Policy, rule Rule, script node.PackageScript, evidence Evidence) Finding {
